@@ -79,7 +79,7 @@ export function OnboardingScreen(p: OnboardingScreenProps) {
           </div>
           {p.status === "bad-secret" && <p role="alert" className="font-bold text-destructive">密鑰不對，請跟另一位確認後再輸入一次。</p>}
           {p.status === "offline" && (
-            <Alert variant="warning"><WifiOff aria-hidden />
+            <Alert variant="info"><WifiOff aria-hidden />
               <AlertDescription className="text-base">手機目前沒有網路，連上 Wi‑Fi 或行動網路後再試一次。</AlertDescription>
             </Alert>
           )}

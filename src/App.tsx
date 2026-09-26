@@ -59,7 +59,7 @@ export default function App() {
   return (
     <div className="flex h-dvh flex-col">
       {DEMO && (
-        <div role="status" className="flex-none bg-warning-soft px-4 pt-[calc(var(--safe-top)+0.25rem)] pb-1 text-center text-sm font-bold text-warning-soft-foreground">
+        <div role="status" className="flex-none bg-muted px-4 pt-[calc(var(--safe-top)+0.25rem)] pb-1 text-center text-sm font-bold text-muted-foreground">
           本機試用・資料只存在這支手機
         </div>
       )}
