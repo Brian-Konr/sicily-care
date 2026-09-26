@@ -1,5 +1,5 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-/* 工作室共用設計 token（Winter 維護，shadcn 變數名＋@theme inline＋.dark）。
-   npm run dev/build 前由 scripts/sync-tokens.mjs 從 /workspace/studio/design-tokens.css 同步一份進來，repo 自帶。 */
+/* 設計 token（docs/design/design-tokens.css 是來源，shadcn 變數名＋@theme inline＋.dark）。
+   npm run dev/build 前由 scripts/sync-tokens.mjs 從 docs/design/design-tokens.css 同步一份進來，repo 自帶。 */
 @import "./styles/design-tokens.css";

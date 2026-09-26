@@ -1,5 +1,5 @@
 /**
- * 西西里共同照護紀錄：Sheet 結構（依 logging-spec.md §2）
+ * 西西里共同照護紀錄：Sheet 結構（依 docs/spec/logging-spec.md §2）
  * 這個檔案同時被 Code.gs、Setup.gs 和本機測試使用。
  */
 var COMMON_COLS = ['id', 'ts', 'who', 'deleted'];
@@ -48,8 +48,8 @@ var DEFAULT_FOODS = [
   { food_id: 'chicken-shreds', name: '雞肉絲', brand: '', kind: '零食', unit: '小撮', default_qty: 1, grams_per_unit: '', fav: false, active: true }
 ];
 
-/** 第一筆體重（Weight 分頁是空的才寫入）：Chaewon 紀錄約 3.5 kg（2026-09），日期為推估 */
+/** 第一筆體重（Weight 分頁是空的才寫入）：2026-09 的既有紀錄約 3.5 kg，日期為推估 */
 var INITIAL_WEIGHT = {
   id: 'init-weight-2026-09', ts: '2026-09-01T12:00:00+08:00', who: '初始資料', deleted: false,
-  kg: 3.5, method: '寵物秤', note: '初始資料：Chaewon 紀錄約 3.5 kg（2026-09），日期為推估'
+  kg: 3.5, method: '寵物秤', note: '初始資料：約 3.5 kg（2026-09 的既有紀錄），日期為推估'
 };

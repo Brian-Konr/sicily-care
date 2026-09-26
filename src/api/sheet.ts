@@ -1,6 +1,6 @@
 // Google Sheet 原始列的型別（依 logging-spec.md §2）：Apps Script 讀寫的就是這個形狀。
-// 選項欄位直接存繁中文字（例如「喜歡」「蹲很久/用力」），在 Sheet 裡人看得懂，Chaewon 讀取也不用對照表。
-// 畫面用的型別在 src/types.ts（Winter 原型），兩者之間由 src/data/codec.ts 轉換：
+// 選項欄位直接存繁中文字（例如「喜歡」「蹲很久/用力」），在 Sheet 裡人看得懂，其他工具讀取也不用對照表。
+// 畫面用的型別在 src/types.ts（畫面元件用），兩者之間由 src/data/codec.ts 轉換：
 //   多選欄位＝逗號分隔字串、空白＝null、布林可能是 TRUE/FALSE 字串、日期可能被 Sheet 轉成完整時間。
 
 export type Cell = string | number | boolean

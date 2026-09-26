@@ -1,5 +1,5 @@
 // 本機假資料介面卡：行為跟 Apps Script 後端一致（同樣的 action 與回應格式），資料存在 localStorage。
-// 起始資料是 Kazuha 提供的初始資料（src/data/defaults.ts），不含編造的紀錄。
+// 起始資料是正式的初始資料（src/data/defaults.ts），不含編造的紀錄。
 import type { RawConfig, RawFood, LogTable, Snapshot } from './sheet'
 import { DEFAULT_CONFIG, DEFAULT_FOODS, INITIAL_WEIGHT } from '@/data/defaults'
 import { tpeIso } from './time'

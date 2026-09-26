@@ -12,7 +12,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview --host",
     "test": "vitest run",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "build:gas": "node scripts/build-gas.mjs"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",

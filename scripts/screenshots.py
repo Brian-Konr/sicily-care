@@ -1,6 +1,6 @@
 """App 冒煙測試＋截圖（本機試用模式）：390×844。先 `npm run build && npx vite preview --port 4173`。
-用法：python3 scripts/screenshots.py [base_url]；輸出到 app/screens/。"""
-import sys, pathlib
+用法：python3 scripts/screenshots.py [base_url]；輸出到 screens/（不進 repo）。"""
+import os, sys, pathlib
 from playwright.sync_api import sync_playwright
 
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:4173/"
@@ -9,7 +9,8 @@ OUT.mkdir(exist_ok=True)
 errors = []
 
 with sync_playwright() as p:
-    b = p.chromium.launch(executable_path="/usr/bin/google-chrome", args=["--lang=zh-TW"])
+    # 預設用 Playwright 自帶的 Chromium（pip install playwright && playwright install chromium）；想用系統 Chrome 就設 CHROME_PATH
+    b = p.chromium.launch(executable_path=os.environ.get("CHROME_PATH") or None, args=["--lang=zh-TW"])
     ctx = b.new_context(viewport={"width": 390, "height": 844}, device_scale_factor=2, locale="zh-TW",
                         timezone_id="Asia/Taipei", service_workers="block", reduced_motion="reduce")
     pg = ctx.new_page()

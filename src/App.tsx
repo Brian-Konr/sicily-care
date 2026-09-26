@@ -1,6 +1,6 @@
 /**
  * App 容器：唯一有狀態的地方。畫面元件（src/screens）只接收 props；這裡接上資料層、路由、toast。
- * 畫面與元件來自 Winter 的原型（scripts/sync-mockup.sh 同步），toast 文案照 design/mockup/README.md。
+ * 畫面與元件的設計參考 docs/design/mockup/（原型只是參考，src/ 才是正本），toast 文案照 docs/design/。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
