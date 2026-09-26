@@ -23,7 +23,7 @@ import { latest, litterDefaults, pendingFeeds, upcomingMeds, weightSummary } fro
 export type HomeTarget = "feed" | "litter" | "weight" | "med" | "issue" | "timeline" | "settings"
 
 export interface HomeScreenProps {
-  /** 名字與品種；年齡由 config.birthday_est 計算（顯示「約 N 個月」） */
+  /** 名字與品種；年齡由 config.birthday_est＋birthday_estimated 計算（確切「10 個月 25 天」／估計「約 10 個月」） */
   cat: { name: string; breed: string }
   me: string
   now: Date
@@ -66,7 +66,7 @@ export function HomeScreen(p: HomeScreenProps) {
         <h1 className="text-2xl font-bold">{p.cat.name}</h1>
         {/* 品種與年齡各自不斷行；窄的時候年齡換到第二行，不會留下開頭的「・」 */}
         <p className="flex flex-wrap gap-x-2 text-muted-foreground">
-          {[p.cat.breed, catAgeLabel(p.config.birthday_est, p.now)].filter(Boolean).map((part, i) => (
+          {[p.cat.breed, catAgeLabel(p.config.birthday_est, p.now, p.config.birthday_estimated)].filter(Boolean).map((part, i) => (
             <span key={i} className="whitespace-nowrap">{i > 0 && <span className="sr-only">，</span>}{part}</span>
           ))}
         </p>

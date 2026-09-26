@@ -112,8 +112,13 @@ export interface IssueEntry extends BaseEntry {
 
 /* ── Config 分頁（key/value，前端讀成型別化物件） ── */
 export interface Config {
-  /** 西西里的生日（估計值，YYYY-MM-DD）；介面一律標「約」 */
+  /** 西西里的生日（YYYY-MM-DD）。欄位名沿用舊名 birthday_est（Sheet 的 key），不代表一定是估計值 */
   birthday_est: string
+  /**
+   * 生日是估計的（Sheet key `birthday_estimated`）。true：年齡顯示「約」、不顯示天數；false：確切生日。
+   * 種子預設 2025-11-01 是估計；使用者自己存的生日算確切。舊資料沒有這個 key 時用 `resolveBirthdayEstimated()` 推定
+   */
+  birthday_estimated: boolean
   /** 獸醫診所（皆選填，空字串＝沒填）；有電話才顯示撥號鈕 */
   clinic_name: string
   clinic_phone: string
@@ -148,7 +153,7 @@ export interface PhotoDraft {
 export type ScreenId = "home" | "feed" | "litter" | "weight" | "med" | "issue" | "timeline" | "onboarding" | "settings"
 
 /** 設定頁可編輯的欄位（Config 的子集） */
-export type SettingsValues = Pick<Config, "birthday_est" | "clinic_name" | "clinic_phone" | "clinic_24h" | "med_interval_days">
+export type SettingsValues = Pick<Config, "birthday_est" | "birthday_estimated" | "clinic_name" | "clinic_phone" | "clinic_24h" | "med_interval_days">
 
 /** 傳給畫面的診所資訊；沒有電話時為 undefined */
 export interface ClinicInfo {

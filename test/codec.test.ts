@@ -45,3 +45,19 @@ test('初始資料解碼：3 種食物、第一筆體重 3.5 kg、名字 Brian/M
   expect(d.intervalsAreSample).toBe(true)
   expect(d.all.map((e) => e.type)).toEqual(['weight'])
 })
+
+test('生日是否估計：舊資料沒有旗標時的推定與寫回', () => {
+  const seed = decodeConfig(DEFAULT_CONFIG, NOW)
+  expect(seed.birthday_estimated).toBe(true)
+  // Brian 之前在設定頁存過確切生日（舊版沒有旗標）→ 更新後直接算確切
+  const saved = { ...DEFAULT_CONFIG, birthday_est: '2025-10-18T00:00:00+08:00' }
+  expect(decodeConfig(saved, NOW).birthday_estimated).toBe(false)
+  expect(decodeConfig({ ...saved, birthday_estimated: 'TRUE' }, NOW).birthday_estimated).toBe(true)
+  // 只改診所電話：不寫旗標
+  expect(configChanges({ ...seed, clinic_phone: '02-1234' }, DEFAULT_CONFIG)).toEqual([['clinic_phone', '02-1234']])
+  // 改日期（Switch 自動關）：生日＋旗標一起寫
+  expect(configChanges({ ...seed, birthday_est: '2025-10-18', birthday_estimated: false }, DEFAULT_CONFIG))
+    .toEqual([['birthday_est', '2025-10-18'], ['birthday_estimated', false]])
+  // 只切 Switch
+  expect(configChanges({ ...seed, birthday_estimated: false }, DEFAULT_CONFIG)).toEqual([['birthday_estimated', false]])
+})

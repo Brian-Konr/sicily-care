@@ -55,9 +55,9 @@ export function SettingsScreen(p: SettingsScreenProps) {
 
   const today = dateKey(p.now)
   const phoneErr = draft.clinic_phone.trim() && !PHONE_OK.test(draft.clinic_phone.trim()) ? "電話格式好像不對，只能有數字、空格、+、-、括號。" : undefined
-  const bdErr = !draft.birthday_est ? "請選一個大概的日期。" : draft.birthday_est > today ? "生日不能在未來。" : undefined
+  const bdErr = !draft.birthday_est ? "請選一個日期；不確定就填大概的日子。" : draft.birthday_est > today ? "生日不能在未來。" : undefined
   const valid = !phoneErr && !bdErr
-  const age = bdErr ? "" : catAgeLabel(draft.birthday_est, p.now)
+  const age = bdErr ? "" : catAgeLabel(draft.birthday_est, p.now, draft.birthday_estimated)
   const set = <K extends keyof SettingsValues>(k: K, v: SettingsValues[K]) => setDraft((d) => ({ ...d, [k]: v }))
   const setInterval = (k: MedKind, v: number) => setDraft((d) => ({ ...d, med_interval_days: { ...d.med_interval_days, [k]: v } }))
   const save = () => valid && p.onSave({ ...draft, clinic_name: draft.clinic_name.trim(), clinic_phone: draft.clinic_phone.trim() })
@@ -74,9 +74,14 @@ export function SettingsScreen(p: SettingsScreenProps) {
       }>
       <div className="space-y-6 pt-1 pb-2">
         <FormSection id="cat" title={p.catName}>
-          <FormRow label={<>生日<span className="text-muted-foreground">（約）</span></>} htmlFor="bd" stack error={bdErr}
-            hint={<>不確定也沒關係，填大概的日子。首頁會顯示「{age || "—"}」。</>}>
-            <Input id="bd" type="date" value={draft.birthday_est} max={today} onChange={(e) => set("birthday_est", e.target.value)} aria-invalid={!!bdErr} />
+          <FormRow label="生日" htmlFor="bd" stack error={bdErr}
+            hint={<>首頁會顯示「<span className="font-bold text-foreground">{age || "—"}</span>」。</>}>
+            {/* 改日期＝使用者知道確切的日子，自動關掉「估計」；之後仍可手動打開 */}
+            <Input id="bd" type="date" value={draft.birthday_est} max={today} aria-invalid={!!bdErr}
+              onChange={(e) => setDraft((d) => ({ ...d, birthday_est: e.target.value, birthday_estimated: false }))} />
+          </FormRow>
+          <FormRow label="生日是估計的" htmlFor="bd-est" hint="打開後年齡會顯示「約」，不顯示天數。">
+            <Switch id="bd-est" checked={draft.birthday_estimated} onCheckedChange={(v) => set("birthday_estimated", v)} />
           </FormRow>
         </FormSection>
 

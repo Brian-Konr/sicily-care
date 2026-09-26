@@ -1,7 +1,7 @@
 // Sheet 原始列 ⇄ 畫面型別（src/types.ts）。只在這裡處理 Sheet 的怪癖，畫面與規則都拿乾淨的型別。
 import type { AnyEntry, Config, FeedEntry, Food, IssueEntry, LitterEntry, MedEntry, MedKind, SyncState, WeightEntry } from '@/types'
 import type { Cell, LogTable, RawConfig, RawFood, RawRow, Snapshot } from '@/api/sheet'
-import { ageInMonths } from '@/lib/age'
+import { ageInMonths, resolveBirthdayEstimated } from '@/lib/age'
 import { DEFAULT_CONFIG, MED_INTERVAL_KEYS } from './defaults'
 
 export const TYPE_OF_TABLE = { Feed: 'feed', Litter: 'litter', Weight: 'weight', Med: 'med', Issue: 'issue' } as const
@@ -63,6 +63,8 @@ export function decodeConfig(raw: RawConfig, now: Date): Config {
   }
   return {
     birthday_est: birthday,
+    // 舊 Sheet 沒有 birthday_estimated：生日還是種子值 → 估計；使用者存過的其他日期 → 確切
+    birthday_estimated: resolveBirthdayEstimated(raw.birthday_estimated, birthday, String(DEFAULT_CONFIG.birthday_est)),
     clinic_name: str(c.clinic_name), clinic_phone: str(c.clinic_phone), clinic_24h: bool(c.clinic_24h),
     weight_interval_days: num(adult ? c.weight_interval_days_adult : c.weight_interval_days, adult ? 30 : 14),
     deworm_int_days: num(c.deworm_int_days, 90),
@@ -77,6 +79,13 @@ export function configChanges(next: Partial<Config>, raw: RawConfig): [string, C
   const out: [string, Cell][] = []
   const put = (k: string, v: Cell) => { if (String(cur[k] ?? '') !== String(v)) out.push([k, v]) }
   for (const k of ['birthday_est', 'clinic_name', 'clinic_phone'] as const) if (next[k] !== undefined) put(k, next[k]!)
+  if (next.birthday_estimated !== undefined) {
+    const curBd = dateOnly(cur.birthday_est) ?? ''
+    const curEst = resolveBirthdayEstimated(raw.birthday_estimated, curBd, String(DEFAULT_CONFIG.birthday_est))
+    const bdChanged = next.birthday_est !== undefined && next.birthday_est !== curBd
+    // 改了生日就一定寫旗標（不然之後剛好選到種子日期會被推定成估計）；沒改生日則只在旗標變了才寫
+    if (bdChanged || next.birthday_estimated !== curEst) out.push(['birthday_estimated', next.birthday_estimated])
+  }
   if (next.clinic_24h !== undefined) put('clinic_24h', next.clinic_24h)
   if (next.med_interval_days) {
     for (const [kind, n] of Object.entries(next.med_interval_days) as [MedKind, number][]) {

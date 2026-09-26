@@ -167,14 +167,14 @@ function Main({ settings, onSignOut }: { settings: Settings; onSignOut: () => vo
 
   const all = data?.all ?? []
   const settingsValues: SettingsValues | null = useMemo(() => data && ({
-    birthday_est: data.config.birthday_est, clinic_name: data.config.clinic_name, clinic_phone: data.config.clinic_phone,
+    birthday_est: data.config.birthday_est, birthday_estimated: data.config.birthday_estimated, clinic_name: data.config.clinic_name, clinic_phone: data.config.clinic_phone,
     clinic_24h: data.config.clinic_24h, med_interval_days: data.config.med_interval_days,
   }), [data])
 
   if (!data) {
     return (
       <HomeScreen cat={CAT} me={me} now={now} status={loadState === "error" ? "error" : "loading"} network={network}
-        queuedCount={queuedCount} failedCount={failedCount} config={{ birthday_est: "", clinic_name: "", clinic_phone: "", clinic_24h: false, weight_interval_days: 14, deworm_int_days: 90, med_interval_days: {}, litter_clumping: true }}
+        queuedCount={queuedCount} failedCount={failedCount} config={{ birthday_est: "", birthday_estimated: true, clinic_name: "", clinic_phone: "", clinic_24h: false, weight_interval_days: 14, deworm_int_days: 90, med_interval_days: {}, litter_clumping: true }}
         feeds={[]} litter={[]} weights={[]} meds={[]} recent={[]}
         onOpen={setScreen} onFillEaten={() => {}} onLitterNormal={() => {}} onRetry={() => void refresh()} onRetrySync={retrySync} />
     )
