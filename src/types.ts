@@ -156,4 +156,8 @@ export interface ClinicInfo {
   phone: string
   is24h: boolean
 }
-export type NetworkState = "online" | "offline"
+/**
+ * 連線狀態（DESIGN.md §8）：online／offline（手機本身沒網路，navigator.onLine=false）／
+ * unreachable（手機有網路，但後端 Apps Script 沒回應或回錯）。本機試用不是連線狀態，另由 App 殼處理。
+ */
+export type NetworkState = "online" | "offline" | "unreachable"

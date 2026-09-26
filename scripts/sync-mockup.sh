@@ -4,7 +4,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 SRC=../design/mockup/src
-KEEP=(components/SampleBadge.tsx screens/Onboarding.tsx lib/utils.ts)
+KEEP=(components/SampleBadge.tsx lib/utils.ts)
 tmp=$(mktemp -d)
 for k in "${KEEP[@]}"; do [ -f "src/$k" ] && mkdir -p "$tmp/$(dirname "$k")" && cp "src/$k" "$tmp/$k"; done
 rm -rf src/screens src/components src/lib/rules.ts src/lib/format.ts src/lib/describe.ts src/lib/age.ts

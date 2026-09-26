@@ -15,6 +15,7 @@ import { MedScreen } from "@/screens/Med"
 import { IssueScreen } from "@/screens/Issue"
 import { TimelineScreen } from "@/screens/Timeline"
 import { OnboardingScreen } from "@/screens/Onboarding"
+import { LocalTrialBanner } from "@/components/NetworkBanner"
 import { SettingsScreen } from "@/screens/Settings"
 import { dateKey, fmtTime } from "@/lib/format"
 import { autoNextDue, clinicFromConfig, eatenLabel, timelineItems } from "@/lib/rules"
@@ -58,11 +59,7 @@ export default function App() {
 
   return (
     <div className="flex h-dvh flex-col">
-      {DEMO && (
-        <div role="status" className="flex-none bg-muted px-4 pt-[calc(var(--safe-top)+0.25rem)] pb-1 text-center text-sm font-bold text-muted-foreground">
-          本機試用・資料只存在這支手機
-        </div>
-      )}
+      {DEMO && <LocalTrialBanner />}
       {/* 試用橫條已經吃掉瀏海安全區，下面的畫面標題就不用再留 */}
       <div className="min-h-0 flex-1" style={DEMO ? ({ "--safe-top": "0px" } as React.CSSProperties) : undefined}>
         {settings
@@ -130,7 +127,7 @@ function Main({ settings, onSignOut }: { settings: Settings; onSignOut: () => vo
 
   /** 送出寫入；背景失敗（非離線）時提示，紀錄會留在「沒送出」清單可重試 */
   const send = useCallback((p: Promise<unknown>) => { p.catch((e) => toast.error("沒送出去", { description: String((e as Error).message ?? e) })) }, [])
-  const offlineNote = (net: NetworkState, msg: string) => (net === "offline" ? `${msg}（離線，待上傳）` : msg)
+  const offlineNote = (net: NetworkState, msg: string) => (net !== "online" ? `${msg}（${net === "offline" ? "離線" : "連不到後端"}，待上傳）` : msg)
 
   /** 新增一筆＋toast（「復原」＝軟刪除） */
   function add(table: LogTable, body: object, msg: string, opts: { ts?: string } = {}) {

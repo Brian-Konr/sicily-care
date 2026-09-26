@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # 把 dist/ 發佈到 gh-pages 分支（GitHub Pages 來源：gh-pages / root）。
 # 用法：SICILY_CARE_GITHUB_TOKEN=... ./scripts/deploy-gh-pages.sh
-# VITE_GAS_URL：優先用環境變數；沒有就讀 repo variable；都沒有就以「本機試用」模式建置。
+# VITE_GAS_URL：優先用環境變數，其次 deploy/gas-url，再其次 repo variable；都沒有就以「本機試用」模式建置。
 # token 只透過 credential helper 從環境變數讀，不會寫進 remote URL 或任何檔案。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 REPO="${REPO:-Brian-Konr/sicily-care}"
 : "${SICILY_CARE_GITHUB_TOKEN:?需要 SICILY_CARE_GITHUB_TOKEN}"
+# 網址不是秘密（前端本來就會帶著它），存在 deploy/gas-url，之後重新部署不用再給
+if [ -z "${VITE_GAS_URL:-}" ] && [ -s deploy/gas-url ]; then VITE_GAS_URL="$(tr -d '[:space:]' < deploy/gas-url)"; fi
 if [ -z "${VITE_GAS_URL:-}" ]; then
   # 讀不到（沒設或 token 沒有 Variables 權限）就留空
   VITE_GAS_URL="$(GH_TOKEN="$SICILY_CARE_GITHUB_TOKEN" gh api "repos/$REPO/actions/variables/VITE_GAS_URL" --jq .value 2>/dev/null)" || VITE_GAS_URL=""

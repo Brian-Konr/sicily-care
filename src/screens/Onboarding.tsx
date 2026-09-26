@@ -23,9 +23,9 @@ export interface OnboardingScreenProps {
 }
 
 /**
- * App 版（覆寫原型；sync-mockup.sh 會保留這個檔案）。和原型的差別：
- * - needSecret=false（本機試用）時跳過密鑰步驟
- * - 分開「手機離線」和「連不到 Google 後端」兩種錯誤，後者有「再試一次」
+ * 首次開啟（DESIGN.md §8 連線狀態／本機試用）：
+ * - needSecret=false（本機試用，沒有後端網址）時跳過密鑰步驟，只選身分；頂部試用橫條由 App 殼負責（`LocalTrialBanner`）
+ * - 三種失敗分開講：密鑰錯誤（destructive 文字）／手機離線（info）／連不到 Google 後端（warning＋「再試一次」）
  */
 export function OnboardingScreen(p: OnboardingScreenProps) {
   const needSecret = p.needSecret ?? true

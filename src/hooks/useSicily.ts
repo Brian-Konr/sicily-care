@@ -58,7 +58,8 @@ export function useSicily(settings: Settings, now: Date) {
     /** 首頁用：第一次讀取中＝loading；讀不到又沒有快取＝error */
     loadState: data ? ('ready' as const) : loadError ? ('error' as const) : ('loading' as const),
     loadError,
-    network: status.online && browserOnline ? ('online' as const) : ('offline' as const),
+    /** 手機沒網路＝offline；手機有網路但最近一次連後端失敗＝unreachable（DESIGN.md §8 要分清楚原因） */
+    network: !browserOnline ? ('offline' as const) : status.online ? ('online' as const) : ('unreachable' as const),
     queuedCount: status.pending,
     failedCount: status.failed.length,
     refresh,
