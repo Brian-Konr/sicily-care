@@ -1,0 +1,221 @@
+"""設計系統 tokens 單一來源（shadcn/ui 變數命名）。
+執行（在 repo 根目錄或任何地方都可以，路徑以這個檔案的位置為準）：python3 docs/design/tools/tokens.py
+  → 寫出 docs/design/design-tokens.css（Tailwind v4 + shadcn 可直接 @import）
+  → 寫出 docs/design/tools/contrast-report.md（每組前景／背景的 WCAG 2.x 對比，程式計算）
+App 建置前（npm run dev／build）會由 scripts/sync-tokens.mjs 把 docs/design/design-tokens.css 複製到 src/styles/。
+任何一組未達門檻會以 exit 1 結束。
+"""
+import pathlib, sys
+
+LIGHT = {
+    "background": "#FAF6F1", "foreground": "#2B231D",
+    "card": "#FFFFFF", "card-foreground": "#2B231D",
+    "popover": "#FFFFFF", "popover-foreground": "#2B231D",
+    "primary": "#B04E26", "primary-foreground": "#FFFFFF",
+    "secondary": "#F3EDE5", "secondary-foreground": "#2B231D",
+    "muted": "#F3EDE5", "muted-foreground": "#675A4E",
+    "accent": "#FBE9DF", "accent-foreground": "#86381A",
+    "destructive": "#B3261E", "destructive-foreground": "#FFFFFF",
+    "destructive-soft": "#FDE8E5", "destructive-soft-foreground": "#8C1D16",
+    "success": "#2D7A4B", "success-foreground": "#FFFFFF",
+    "success-soft": "#E4F2E8", "success-soft-foreground": "#1E5A36",
+    "warning": "#8A5700", "warning-foreground": "#FFFFFF",
+    "warning-soft": "#FDF1D6", "warning-soft-foreground": "#6E4500",
+    "info": "#2A5FA5", "info-foreground": "#FFFFFF",
+    "info-soft": "#E4EDF9", "info-soft-foreground": "#1F4A82",
+    "border": "#E6DCD0", "input": "#8C7B6B", "ring": "#2A5FA5",
+    "overlay": "rgba(43, 35, 29, 0.48)",
+}
+DARK = {
+    "background": "#1A1613", "foreground": "#F3EDE6",
+    "card": "#25201C", "card-foreground": "#F3EDE6",
+    "popover": "#2B2621", "popover-foreground": "#F3EDE6",
+    "primary": "#F0915F", "primary-foreground": "#24120A",
+    "secondary": "#342D27", "secondary-foreground": "#F3EDE6",
+    "muted": "#2E2823", "muted-foreground": "#BBAD9F",
+    "accent": "#3E2519", "accent-foreground": "#FFCDB3",
+    "destructive": "#FF8B7D", "destructive-foreground": "#2E0B07",
+    "destructive-soft": "#46201B", "destructive-soft-foreground": "#FFC4BB",
+    "success": "#6FCB92", "success-foreground": "#0E2417",
+    "success-soft": "#1B3225", "success-soft-foreground": "#A9E5BE",
+    "warning": "#F0B84E", "warning-foreground": "#2A1C00",
+    "warning-soft": "#3A2C10", "warning-soft-foreground": "#F9D891",
+    "info": "#82B3F0", "info-foreground": "#0B1E36",
+    "info-soft": "#172A41", "info-soft-foreground": "#BCD7F8",
+    "border": "#3B342D", "input": "#8F8173", "ring": "#82B3F0",
+    "overlay": "rgba(0, 0, 0, 0.62)",
+}
+
+# (前景, 背景, 門檻, 用途)
+PAIRS = [
+    ("foreground", "background", 4.5, "內文"),
+    ("card-foreground", "card", 4.5, "卡片內文"),
+    ("popover-foreground", "popover", 4.5, "Sheet／Popover 內文"),
+    ("muted-foreground", "background", 4.5, "次要文字（頁面底色）"),
+    ("muted-foreground", "card", 4.5, "次要文字（卡片）"),
+    ("muted-foreground", "muted", 4.5, "次要文字（muted 區塊）"),
+    ("muted-foreground", "popover", 4.5, "次要文字（Sheet）"),
+    ("primary-foreground", "primary", 4.5, "Button default"),
+    ("primary", "background", 4.5, "主色文字／連結（頁面底色）"),
+    ("primary", "card", 4.5, "主色文字（卡片）、outline 按鈕文字"),
+    ("secondary-foreground", "secondary", 4.5, "Button secondary"),
+    ("accent-foreground", "accent", 4.5, "Toggle 選中、晶片選中"),
+    ("destructive-foreground", "destructive", 4.5, "Button destructive、緊急 Alert（請聯絡獸醫）"),
+    ("destructive", "card", 4.5, "緊急文字（卡片）"),
+    ("destructive", "background", 4.5, "緊急文字／逾期紅點說明"),
+    ("destructive-soft-foreground", "destructive-soft", 4.5, "緊急淺底 Badge"),
+    ("success-foreground", "success", 4.5, "成功實心（一切正常 ✓）"),
+    ("success", "card", 4.5, "正常文字"),
+    ("success-soft-foreground", "success-soft", 4.5, "正常 Badge"),
+    ("warning-foreground", "warning", 4.5, "注意實心"),
+    ("warning", "card", 4.5, "注意文字"),
+    ("warning-soft-foreground", "warning-soft", 4.5, "注意 Badge／重複餵食提醒／示意徽章"),
+    ("info-foreground", "info", 4.5, "資訊實心"),
+    ("info", "card", 4.5, "資訊文字"),
+    ("info-soft-foreground", "info-soft", 4.5, "資訊 Alert（離線）"),
+    ("input", "card", 3.0, "輸入框／外框按鈕邊線（1.4.11 非文字）"),
+    ("input", "background", 3.0, "輸入框邊線（頁面底色）"),
+    ("ring", "background", 3.0, "焦點外框"),
+    ("ring", "card", 3.0, "焦點外框（卡片）"),
+    ("destructive", "card", 3.0, "逾期紅點（非文字，另附文字）"),
+]
+
+def lum(h):
+    h = h.lstrip("#"); r, g, b = (int(h[i:i+2], 16) / 255 for i in (0, 2, 4))
+    f = lambda c: c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
+
+def ratio(a, b):
+    la, lb = sorted((lum(a), lum(b)), reverse=True)
+    return (la + 0.05) / (lb + 0.05)
+
+def report():
+    rows, fails = [], []
+    for fg, bg, need, use in PAIRS:
+        rl, rd = ratio(LIGHT[fg], LIGHT[bg]), ratio(DARK[fg], DARK[bg])
+        ok = rl >= need and rd >= need
+        if not ok: fails.append((fg, bg, round(rl, 2), round(rd, 2)))
+        rows.append(f"| `--{fg}` on `--{bg}` | {use} | {LIGHT[fg]} / {LIGHT[bg]} | **{rl:.2f}:1** | {DARK[fg]} / {DARK[bg]} | **{rd:.2f}:1** | ≥{need}:1 | {'✓' if ok else '✗'} |")
+    head = ("| 組合 | 用途 | 淺色 前景/背景 | 淺色對比 | 深色 前景/背景 | 深色對比 | 門檻 | 通過 |\n"
+            "|---|---|---|---|---|---|---|---|")
+    return head + "\n" + "\n".join(rows), fails
+
+def block(d, indent="  "):
+    return "\n".join(f"{indent}--{k}: {v};" for k, v in d.items())
+
+THEME_COLORS = "\n".join(f"  --color-{k}: var(--{k});" for k in LIGHT)
+
+CSS = """/* design-tokens.css — 設計系統 v0（2026-09-26，台北時間）
+ * 由 docs/design/tools/tokens.py 產生，請勿手改；改值請改 tokens.py 後重新執行（會一併重算對比）。
+ * 命名沿用 shadcn/ui；另加 success / warning / info 與 *-soft 淺底。
+ * 狀態色：正常＝success、注意＝warning、緊急＝destructive（一律搭配圖示＋文字）。
+ * 用法（Tailwind v4）：在 src/index.css 依序
+ *   @import "tailwindcss";
+ *   @import "tw-animate-css";
+ *   @import "<相對路徑>/design-tokens.css";
+ * 深色：<html class="dark">。要跟隨系統，請在 App 以 matchMedia('(prefers-color-scheme: dark)') 切換 .dark。
+ */
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  color-scheme: light;
+  --radius: 0.75rem; /* 12px；sm=8 md=10 lg=12 xl=16 由 @theme 推導 */
+
+  /* 動態 */
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 300ms;
+  --ease-out-soft: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --undo-window: 5s; /* Sonner 撤銷 toast 停留時間；時間軸內撤銷不限時（7 天內） */
+
+  /* 尺寸 */
+  --touch-min: 44px;
+  --control-h: 48px;
+  --tile-min-h: 96px;
+
+  /* iOS 安全區（真機用 env()；原型外框會覆寫成模擬值） */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  /* 色彩：淺色 */
+@@LIGHT@@
+}
+
+.dark {
+  color-scheme: dark;
+@@DARK@@
+}
+
+@theme inline {
+  /* 色彩 → Tailwind utilities（bg-primary、text-success-soft-foreground…） */
+@@THEME@@
+
+  /* 圓角 */
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 12px);
+
+  /* 陰影（暖色調） */
+  --shadow-xs: 0 1px 2px rgb(60 40 25 / 0.06);
+  --shadow-sm: 0 1px 2px rgb(60 40 25 / 0.08), 0 1px 1px rgb(60 40 25 / 0.04);
+  --shadow-md: 0 4px 12px rgb(60 40 25 / 0.10), 0 1px 3px rgb(60 40 25 / 0.06);
+  --shadow-lg: 0 -8px 32px rgb(60 40 25 / 0.18);
+}
+
+@theme {
+  /* 字體：系統字優先，繁中 fallback */
+  --font-sans: -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", "Noto Sans CJK TC", "Microsoft JhengHei", "Heiti TC", system-ui, sans-serif;
+  --font-num: ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", "Noto Sans CJK TC", system-ui, sans-serif;
+
+  /* 字級：App 內最小 16px。刻意把 text-xs / text-sm 也設成 16px，
+     讓 shadcn 元件預設的 text-sm 不會產生小字（也避免 iOS 輸入框放大）。 */
+  --text-xs: 1rem;       --text-xs--line-height: 1.5rem;
+  --text-sm: 1rem;       --text-sm--line-height: 1.5rem;
+  --text-base: 1rem;     --text-base--line-height: 1.5rem;     /* 16/24 內文 */
+  --text-lg: 1.125rem;   --text-lg--line-height: 1.75rem;      /* 18/28 卡片標題 */
+  --text-xl: 1.25rem;    --text-xl--line-height: 1.75rem;      /* 20/28 畫面標題 */
+  --text-2xl: 1.5rem;    --text-2xl--line-height: 2rem;        /* 24/32 首頁貓名 */
+  --text-3xl: 2rem;      --text-3xl--line-height: 2.5rem;      /* 32/40 體重大數字 */
+
+  /* 間距：Tailwind 預設 --spacing 0.25rem＝4px 基準，沿用 */
+  --spacing: 0.25rem;
+}
+
+@layer base {
+  * { @apply border-border; }
+  html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
+  body { @apply bg-background text-foreground; font-family: var(--font-sans); }
+  input, textarea, select { font-size: max(16px, 1em); } /* iOS：小於 16px 會自動放大 */
+}
+
+/* 焦點外框：不放在 layer 中，蓋過 shadcn 元件的 outline-none，確保 3:1 以上可見 */
+:focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --duration-fast: 0ms; --duration-base: 0ms; --duration-slow: 0ms; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+"""
+
+def css():
+    return (CSS.replace("@@LIGHT@@", block(LIGHT)).replace("@@DARK@@", block(DARK))
+               .replace("@@THEME@@", THEME_COLORS))
+
+if __name__ == "__main__":
+    root = pathlib.Path(__file__).resolve().parent.parent  # docs/design/
+    table, fails = report()
+    (root / "tools" / "contrast-report.md").write_text(
+        "# 對比報告（docs/design/tools/tokens.py 自動產生）\n\nWCAG 2.x 相對亮度公式；文字門檻 4.5:1（AA），非文字 3:1。\n\n" + table + "\n")
+    (root / "design-tokens.css").write_text(css())
+    print(table)
+    if fails:
+        print("\nFAIL:", fails); sys.exit(1)
+    print("\nall pass")

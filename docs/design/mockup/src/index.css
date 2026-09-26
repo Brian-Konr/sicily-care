@@ -1,0 +1,14 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+/* 設計 tokens：docs/design/design-tokens.css（由 docs/design/tools/tokens.py 產生；App 也用同一份） */
+@import "../../design-tokens.css";
+
+/* 原型外框：模擬 iPhone 13/14（390×844）的安全區；真機直接用 tokens 裡的 env() */
+.phone-frame {
+  --safe-top: 47px;
+  --safe-bottom: 34px;
+}
+
+/* 截圖用：整頁展開（?shot&full），不影響正式 App */
+.phone-frame.full main { overflow: visible; }
+.phone-frame.full > .h-full, .phone-frame.full .h-full { height: auto; }
