@@ -8,6 +8,7 @@ import type { WriteOp } from '@/api/types'
 import { decodeSnapshot } from '@/data/codec'
 import { flushPhotoOutbox } from '@/data/photo'
 import { DEMO, GAS_URL, type Settings } from '@/data/settings'
+import { networkState, RECHECK_AFTER_FAIL_MS } from '@/data/network'
 
 const failedId = (op: WriteOp) => (op.action === 'append' ? op.record.id : 'id' in op ? op.id : undefined)
 
@@ -23,12 +24,16 @@ export function useSicily(settings: Settings, now: Date) {
   const [loadError, setLoadError] = useState<Error | null>(null)
   const [status, setStatus] = useState<ApiStatus>(() => api.status())
   const [browserOnline, setBrowserOnline] = useState(() => navigator.onLine)
+  /** 連續幾次讀取連不到後端（成功就歸零） */
+  const [failStreak, setFailStreak] = useState(0)
 
   const refresh = useCallback(async () => {
     try {
       setSnap(await api.load(7)); setLoadError(null)
       void flushPhotoOutbox(api).catch(() => 0)
     } catch (e) { setLoadError(e as Error) }
+    const ok = api.status().online
+    setFailStreak((n) => (ok ? 0 : n + 1))
   }, [api])
 
   // 每次佇列變動（新增、送出、失敗）都用本機快照更新畫面，不必等重新讀取
@@ -58,6 +63,13 @@ export function useSicily(settings: Settings, now: Date) {
     return () => clearInterval(t)
   }, [unreachable, hasPending, refresh])
 
+  // 背景讀取第一次失敗（多半是冷啟動）：15 秒後再確認一次，成功就不打擾，再失敗才顯示橫幅
+  useEffect(() => {
+    if (failStreak !== 1 || !browserOnline) return
+    const t = setTimeout(() => { void refresh() }, RECHECK_AFTER_FAIL_MS)
+    return () => clearTimeout(t)
+  }, [failStreak, browserOnline, refresh])
+
   const failedIds = useMemo(() => new Set(status.failed.map((f) => failedId(f.op)).filter((x): x is string => !!x)), [status.failed])
   const data = useMemo(() => (snap ? decodeSnapshot(snap, now, failedIds) : null), [snap, now, failedIds])
 
@@ -67,8 +79,8 @@ export function useSicily(settings: Settings, now: Date) {
     /** 首頁用：第一次讀取中＝loading；讀不到又沒有快取＝error */
     loadState: data ? ('ready' as const) : loadError ? ('error' as const) : ('loading' as const),
     loadError,
-    /** 手機沒網路＝offline；手機有網路但最近一次連後端失敗＝unreachable（DESIGN.md §8 要分清楚原因） */
-    network: !browserOnline ? ('offline' as const) : status.online ? ('online' as const) : ('unreachable' as const),
+    /** 手機沒網路＝offline；有待送紀錄或連續 2 次連不到後端＝unreachable；偶發一次失敗不打擾（見 data/network.ts） */
+    network: networkState({ browserOnline, backendOk: status.online, pending: status.pending, failStreak }),
     queuedCount: status.pending,
     failedCount: status.failed.length,
     refresh,
