@@ -8,7 +8,11 @@ cd "$(dirname "$0")/.."
 REPO="${REPO:-Brian-Konr/sicily-care}"
 : "${SICILY_CARE_GITHUB_TOKEN:?需要 SICILY_CARE_GITHUB_TOKEN}"
 if [ -z "${VITE_GAS_URL:-}" ]; then
-  VITE_GAS_URL="$(GH_TOKEN="$SICILY_CARE_GITHUB_TOKEN" gh api "repos/$REPO/actions/variables/VITE_GAS_URL" --jq .value 2>/dev/null || true)"
+  # 讀不到（沒設或 token 沒有 Variables 權限）就留空
+  VITE_GAS_URL="$(GH_TOKEN="$SICILY_CARE_GITHUB_TOKEN" gh api "repos/$REPO/actions/variables/VITE_GAS_URL" --jq .value 2>/dev/null)" || VITE_GAS_URL=""
+fi
+if [ -n "$VITE_GAS_URL" ] && ! [[ "$VITE_GAS_URL" =~ ^https://script\.google\.com/macros/s/[A-Za-z0-9_-]+/exec$ ]]; then
+  echo "[deploy] VITE_GAS_URL 格式不對（應為 https://script.google.com/macros/s/…/exec），停止" >&2; exit 1
 fi
 export VITE_GAS_URL BASE="/${REPO#*/}/"
 echo "[deploy] BASE=$BASE  模式：$([ -n "$VITE_GAS_URL" ] && echo 連線 Apps Script || echo 本機試用)"
