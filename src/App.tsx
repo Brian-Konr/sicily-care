@@ -20,7 +20,7 @@ import { dateKey, fmtTime } from "@/lib/format"
 import { autoNextDue, clinicFromConfig, eatenLabel, timelineItems } from "@/lib/rules"
 import { uuid, type Api } from "@/api"
 import { createGasAdapter } from "@/api/gas"
-import { NetworkError } from "@/api/errors"
+import { ServerError } from "@/api/errors"
 import type { LogTable } from "@/api/sheet"
 import { TABLE_OF_TYPE, configChanges, encodeFields } from "@/data/codec"
 import { CAT } from "@/data/defaults"
@@ -57,10 +57,18 @@ export default function App() {
   const [settings, setSettings] = useState<Settings | null>(() => loadSettings())
 
   return (
-    <div className="h-dvh">
-      {settings
-        ? <Main settings={settings} onSignOut={() => { clearSettings(); setSettings(null); location.hash = "" }} />
-        : <Onboarding onDone={(s) => { saveSettings(s); setSettings(s); location.hash = "home"; toast(`嗨，${s.who}！設定完成`) }} />}
+    <div className="flex h-dvh flex-col">
+      {DEMO && (
+        <div role="status" className="flex-none bg-warning-soft px-4 pt-[calc(var(--safe-top)+0.25rem)] pb-1 text-center text-sm font-bold text-warning-soft-foreground">
+          本機試用・資料只存在這支手機
+        </div>
+      )}
+      {/* 試用橫條已經吃掉瀏海安全區，下面的畫面標題就不用再留 */}
+      <div className="min-h-0 flex-1" style={DEMO ? ({ "--safe-top": "0px" } as React.CSSProperties) : undefined}>
+        {settings
+          ? <Main settings={settings} onSignOut={() => { clearSettings(); setSettings(null); location.hash = "" }} />
+          : <Onboarding onDone={(s) => { saveSettings(s); setSettings(s); location.hash = "home"; toast(`嗨，${s.who}！設定完成`) }} />}
+      </div>
       <Toaster theme={dark ? "dark" : "light"} position="bottom-center" visibleToasts={1}
         offset={{ bottom: "calc(var(--safe-bottom) + 76px)" }} mobileOffset={{ bottom: "calc(var(--safe-bottom) + 76px)", left: "12px", right: "12px" }}
         toastOptions={{
@@ -77,25 +85,28 @@ export default function App() {
   )
 }
 
-/** 首次開啟：選身分、輸入共享密鑰，先用密鑰讀一次 Sheet 確認正確才存 */
+/** 首次開啟：選身分；有後端網址時再輸入共享密鑰，先用密鑰讀一次 Sheet 確認正確才存 */
 function Onboarding({ onDone }: { onDone: (s: Settings) => void }) {
-  const [status, setStatus] = useState<"idle" | "checking" | "bad-secret" | "offline">("idle")
+  const [status, setStatus] = useState<"idle" | "checking" | "bad-secret" | "offline" | "unreachable">("idle")
+  // 連線失敗時分清楚：手機本身沒網路，還是有網路但 Google 後端沒回應／網址錯
+  const netFail = () => setStatus(navigator.onLine === false ? "offline" : "unreachable")
   const standalone = matchMedia("(display-mode: standalone)").matches
   return (
-    <OnboardingScreen catName={CAT.name} users={DEFAULT_USERS} status={status} showInstallHint={!standalone}
+    <OnboardingScreen catName={CAT.name} users={DEFAULT_USERS} status={status} showInstallHint={!standalone} needSecret={!DEMO}
       onSubmit={async ({ who, secret }) => {
         if (DEMO) return onDone({ who, secret: "" })
         setStatus("checking")
         try {
           const res = await createGasAdapter({ url: GAS_URL, secret: secret.trim() }).call({ action: "read", days: 1 })
-          if (res.ok === false) return setStatus(res.error === "unauthorized" ? "bad-secret" : "offline")
+          if (res.ok === false) return res.error === "unauthorized" ? setStatus("bad-secret") : netFail()
           setStatus("idle")
           onDone({ who, secret: secret.trim() })
         } catch (err) {
-          setStatus(err instanceof NetworkError ? "offline" : "bad-secret")
+          // 網址回的不是預期的 JSON（例如部署設定錯）也算「連不到後端」，不是密鑰錯
+          if (err instanceof ServerError && err.code === "unauthorized") setStatus("bad-secret")
+          else netFail()
         }
-      }}
-      footnote={DEMO ? <p className="text-muted-foreground">本機試用：還沒連上 Google Sheet，資料只存在這支手機，密鑰可以隨便填。</p> : undefined} />
+      }} />
   )
 }
 

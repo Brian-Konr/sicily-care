@@ -24,7 +24,6 @@ with sync_playwright() as p:
     pg.wait_for_timeout(800)
     snap("01-onboarding")
     pg.get_by_role("radio", name="Mia").click()
-    pg.locator("#secret").fill("demo")
     pg.get_by_role("button", name="開始使用").click()
     pg.wait_for_timeout(1200)
     snap("02-home")
