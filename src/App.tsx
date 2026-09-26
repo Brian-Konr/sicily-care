@@ -93,8 +93,9 @@ function Onboarding({ onDone }: { onDone: (s: Settings) => void }) {
       onSubmit={async ({ who, secret }) => {
         if (DEMO) return onDone({ who, secret: "" })
         setStatus("checking")
+        // Apps Script 冷啟動偶爾要 20–30 秒，第一次確認密鑰多等一點，免得誤報「連不到」
         try {
-          const res = await createGasAdapter({ url: GAS_URL, secret: secret.trim() }).call({ action: "read", days: 1 })
+          const res = await createGasAdapter({ url: GAS_URL, secret: secret.trim(), timeoutMs: 45000 }).call({ action: "read", days: 1 })
           if (res.ok === false) return res.error === "unauthorized" ? setStatus("bad-secret") : netFail()
           setStatus("idle")
           onDone({ who, secret: secret.trim() })
