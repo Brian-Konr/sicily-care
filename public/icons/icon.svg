@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#B04E26"/>
+  <g fill="#FAF6F1">
+    <path d="M136 206 L156 104 L224 170 Z"/>
+    <path d="M376 206 L356 104 L288 170 Z"/>
+    <ellipse cx="256" cy="262" rx="140" ry="124"/>
+  </g>
+  <g fill="#2B231D">
+    <ellipse cx="206" cy="254" rx="16" ry="22"/>
+    <ellipse cx="306" cy="254" rx="16" ry="22"/>
+    <path d="M242 300 h28 l-14 16 z"/>
+  </g>
+  <g stroke="#2B231D" stroke-width="7" stroke-linecap="round" fill="none">
+    <path d="M256 316 q-16 18 -34 8"/><path d="M256 316 q16 18 34 8"/>
+  </g>
+  <text x="256" y="452" text-anchor="middle" font-family="Noto Sans CJK TC, PingFang TC, sans-serif" font-size="64" font-weight="700" fill="#FAF6F1">西西里</text>
+</svg>
