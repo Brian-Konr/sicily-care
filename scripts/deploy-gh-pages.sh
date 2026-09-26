@@ -20,6 +20,7 @@ export VITE_GAS_URL BASE="/${REPO#*/}/"
 echo "[deploy] BASE=$BASE  模式：$([ -n "$VITE_GAS_URL" ] && echo 連線 Apps Script || echo 本機試用)"
 npm test
 npm run build
+npx vitest run test/security.test.ts   # 建置後再檢查一次產物
 touch dist/.nojekyll
 SHA="$(git rev-parse --short HEAD)"
 TMP="$(mktemp -d)"

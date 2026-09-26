@@ -25,7 +25,9 @@ test('前端原始碼沒有寫死的密鑰或 Apps Script 網址', () => {
 test('build 產物（若有）沒有密鑰，Apps Script 網址只能是 VITE_GAS_URL', () => {
   const dist = join(root, 'dist')
   if (!existsSync(dist)) return
-  const allowed = process.env.VITE_GAS_URL ?? ''
+  // 允許的網址：建置時的 VITE_GAS_URL，或 deploy/gas-url（部署腳本預設讀這個）
+  const gasFile = join(root, 'deploy/gas-url')
+  const allowed = process.env.VITE_GAS_URL || (existsSync(gasFile) ? readFileSync(gasFile, 'utf8').trim() : '')
   const hit = walk(dist).filter((f) => /\.(js|html|webmanifest)$/.test(f)).filter((f) => {
     const s = readFileSync(f, 'utf8')
     const urls = s.match(/https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]{20,}\/exec/g) ?? []
