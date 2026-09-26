@@ -1,6 +1,8 @@
 /** 連不到伺服器（離線、逾時）。寫入會留在待送佇列，之後自動補送。 */
 export class NetworkError extends Error {
-  constructor(message = '目前連不上，已先存在這支手機，上線後會自動補送') { super(message); this.name = 'NetworkError' }
+  /** 原因：timeout（等太久被中斷，後端可能已寫入）／fetch（連線失敗）／http-<code> */
+  kind: string
+  constructor(message = '目前連不上，已先存在這支手機，上線後會自動補送', kind = 'fetch') { super(message); this.name = 'NetworkError'; this.kind = kind }
 }
 /** 伺服器回 { ok:false }。 */
 export class ServerError extends Error {

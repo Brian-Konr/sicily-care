@@ -49,6 +49,15 @@ export function useSicily(settings: Settings, now: Date) {
     }
   }, [refresh])
 
+  // 連不到後端又有待送紀錄時，每 20 秒自動再試（不用等 2 分鐘的定時讀取）；重送靠 id 冪等，不會重複寫
+  const unreachable = browserOnline && !status.online
+  const hasPending = status.pending > 0
+  useEffect(() => {
+    if (!unreachable || !hasPending) return
+    const t = setInterval(() => { if (document.visibilityState === 'visible') void refresh() }, 20_000)
+    return () => clearInterval(t)
+  }, [unreachable, hasPending, refresh])
+
   const failedIds = useMemo(() => new Set(status.failed.map((f) => failedId(f.op)).filter((x): x is string => !!x)), [status.failed])
   const data = useMemo(() => (snap ? decodeSnapshot(snap, now, failedIds) : null), [snap, now, failedIds])
 

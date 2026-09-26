@@ -160,3 +160,36 @@ test('送出失敗可以重試', async () => {
   assert.equal(await api.retryFailed(), 1)
   assert.equal(api.status().failed.length, 0)
 })
+
+test('寫入逾時但後端其實已寫入：補送時新增食物和記一筆都不會重複', async () => {
+  const storage = memoryStorage();
+  const mock = createMockAdapter({ storage, now: () => NOW });
+  let dropReplies = true;
+  // 模擬：請求送到、後端寫好了，但回應在瀏覽器逾時後才到（被當成 NetworkError）
+  const flaky = { kind: 'gas', async call(op) { const res = await mock.call(op); if (dropReplies && op.action !== 'read') { const { NetworkError } = await import('@/api/errors'); throw new NetworkError(undefined, 'timeout'); } return res; } };
+  const api = createApi({ adapter: flaky, storage, who: 'Brian', now: () => NOW });
+  await api.upsertFood({ food_id: 'snack-1', name: '新零食', kind: 'treat', unit: '顆', default_qty: 1, fav: false, active: true });
+  const { record, queued } = await api.log('Feed', { food_id: 'snack-1', food_name: '新零食', qty: 1, unit: '顆' });
+  assert.equal(queued, true);
+  assert.equal(api.status().online, false);
+  assert.equal(api.status().pending, 2);
+
+  dropReplies = false;
+  assert.equal(await api.flush(), 2);
+  assert.equal(api.status().pending, 0);
+  const d = await api.load();
+  assert.equal(d.tables.Foods.filter((f) => f.food_id === 'snack-1').length, 1);
+  assert.equal(d.tables.Feed.filter((r) => r.id === record.id).length, 1);
+});
+
+test('Apps Script 介面卡：預設等 55 秒；逾時丟 NetworkError(kind=timeout)', async () => {
+  const { GAS_TIMEOUT_MS } = await import('@/api/gas');
+  assert.ok(GAS_TIMEOUT_MS >= 50_000, '冷啟動 12–26 秒＋寫入，不能只等 20 秒');
+  let signal;
+  const hang = (url, init) => { signal = init.signal; return new Promise((_, rej) => init.signal.addEventListener('abort', () => rej(new DOMException('aborted', 'AbortError')))); };
+  const a = createGasAdapter({ url: 'https://x/exec', secret: 'k', fetchImpl: hang, timeoutMs: 30 });
+  await assert.rejects(a.call({ action: 'append' }), (e) => e.name === 'NetworkError' && e.kind === 'timeout');
+  assert.equal(signal.aborted, true);
+  const def = createGasAdapter({ url: 'https://x/exec', secret: 'k', fetchImpl: async (u, init) => { signal = init.signal; return { ok: true, json: async () => ({ ok: true }) }; } });
+  await def.call({ action: 'read' });
+});

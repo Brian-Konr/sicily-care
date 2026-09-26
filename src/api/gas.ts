@@ -2,8 +2,15 @@
 import { NetworkError } from './errors'
 import type { Adapter, Op, Response } from './types'
 
+/**
+ * 每個請求最多等多久。Apps Script 冷啟動實測光是「還沒碰到試算表」就可能要 12–26 秒，
+ * 寫入再加上等鎖與 Sheet 操作，20 秒會被瀏覽器提早中斷（後端其實可能已寫入）。
+ * 55 秒：比 iOS Safari 的 60 秒網路逾時短一點，讓我們自己的訊息先出來。
+ */
+export const GAS_TIMEOUT_MS = 55_000
+
 export function createGasAdapter(opts: { url: string; secret: string; fetchImpl?: typeof fetch; timeoutMs?: number }): Adapter {
-  const { url, secret, fetchImpl = globalThis.fetch.bind(globalThis), timeoutMs = 20000 } = opts
+  const { url, secret, fetchImpl = globalThis.fetch.bind(globalThis), timeoutMs = GAS_TIMEOUT_MS } = opts
   if (!url || !secret) throw new Error('需要 Apps Script 網址和共享密鑰')
   return {
     kind: 'gas',
@@ -21,11 +28,11 @@ export function createGasAdapter(opts: { url: string; secret: string; fetchImpl?
           signal: ctrl.signal,
         })
       } catch {
-        throw new NetworkError()
+        throw new NetworkError(undefined, ctrl.signal.aborted ? 'timeout' : 'fetch')
       } finally {
         clearTimeout(timer)
       }
-      if (!res.ok) throw new NetworkError(`伺服器暫時沒有回應（HTTP ${res.status}），稍後會自動重試`)
+      if (!res.ok) throw new NetworkError(`伺服器暫時沒有回應（HTTP ${res.status}），稍後會自動重試`, `http-${res.status}`)
       try {
         return (await res.json()) as Response
       } catch {
