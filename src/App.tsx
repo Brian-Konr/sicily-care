@@ -4,35 +4,54 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
-import type { AnyEntry, FeedEntry, Food, NetworkState, ScreenId, SettingsValues } from "@/types"
+import type { AnyEntry, CareKind, FeedEntry, Food, NetworkState, SettingsValues } from "@/types"
 import { Toaster } from "@/components/ui/sonner"
 import type { EntryPatch } from "@/components/EditEntrySheet"
+import type { ListEndKind } from "@/components/ListEndState"
 import { HomeScreen } from "@/screens/Home"
 import { FeedScreen } from "@/screens/Feed"
+import { FoodsScreen } from "@/screens/Foods"
 import { LitterScreen } from "@/screens/Litter"
 import { WeightScreen } from "@/screens/Weight"
 import { MedScreen } from "@/screens/Med"
 import { IssueScreen } from "@/screens/Issue"
+import { IssueDetailScreen } from "@/screens/IssueDetail"
 import { TimelineScreen } from "@/screens/Timeline"
 import { OnboardingScreen } from "@/screens/Onboarding"
 import { LocalTrialBanner } from "@/components/NetworkBanner"
 import { SettingsScreen } from "@/screens/Settings"
-import { dateKey, fmtTime } from "@/lib/format"
+import { addDays, dateKey, fmtDate, fmtTime } from "@/lib/format"
+import { CARE_ITEMS } from "@/lib/care"
+import { countMatching, firstBefore, type TimelineFilter } from "@/lib/history"
 import { autoNextDue, clinicFromConfig, eatenLabel, timelineItems } from "@/lib/rules"
 import { uuid, type Api } from "@/api"
 import { createGasAdapter } from "@/api/gas"
-import { ServerError } from "@/api/errors"
+import { NetworkError, ServerError } from "@/api/errors"
 import type { LogTable } from "@/api/sheet"
-import { TABLE_OF_TYPE, configChanges, encodeFields } from "@/data/codec"
+import { TABLE_OF_TYPE, configChanges, decodeSnapshot, encodeFields, supportsV11 } from "@/data/codec"
 import { CAT } from "@/data/defaults"
 import { compressImage, pickImageFile, uploadIssuePhotos } from "@/data/photo"
+import { createIdbPhotoCache } from "@/data/photoCache"
 import { DEFAULT_USERS, DEMO, GAS_URL, clearSettings, loadSettings, saveSettings, type Settings } from "@/data/settings"
 import { useSicily } from "@/hooks/useSicily"
 
-const ROUTES: ScreenId[] = ["home", "feed", "litter", "weight", "med", "issue", "timeline", "settings"]
-const readHash = (): ScreenId => {
-  const h = location.hash.replace("#", "") as ScreenId
-  return ROUTES.includes(h) ? h : "home"
+type Route =
+  | { name: "home" | "feed" | "litter" | "weight" | "med" | "issue" | "timeline" | "settings" | "foods" }
+  | { name: "issue-detail"; id: string }
+
+const SCREENS: Route["name"][] = ["home", "feed", "litter", "weight", "med", "issue", "timeline", "settings", "foods"]
+
+const readHash = (): Route => {
+  const h = location.hash.replace(/^#/, "")
+  if (h.startsWith("issue/")) {
+    const id = decodeURIComponent(h.slice("issue/".length))
+    if (id) return { name: "issue-detail", id }
+  }
+  return (SCREENS as string[]).includes(h) ? { name: h as Exclude<Route["name"], "issue-detail"> } : { name: "home" }
+}
+
+const writeHash = (r: Route) => {
+  location.hash = r.name === "issue-detail" ? `issue/${encodeURIComponent(r.id)}` : r.name
 }
 
 function useNow(stepMs = 30_000) {
@@ -110,15 +129,16 @@ function Onboarding({ onDone }: { onDone: (s: Settings) => void }) {
 
 function Main({ settings, onSignOut }: { settings: Settings; onSignOut: () => void }) {
   const now = useNow()
-  const { api, data, loadState, network, queuedCount, failedCount, refresh } = useSicily(settings, now)
+  const { api, data, snap, loadState, network, queuedCount, failedCount, refresh } = useSicily(settings, now)
   const me = settings.who
+  const photoCache = useMemo(() => createIdbPhotoCache(), [])
 
-  const [screen, setScreenState] = useState<ScreenId>(readHash)
-  const setScreen = useCallback((s: ScreenId) => { location.hash = s; setScreenState(s) }, [])
-  useEffect(() => { const on = () => setScreenState(readHash()); addEventListener("hashchange", on); return () => removeEventListener("hashchange", on) }, [])
-  const back = () => setScreen("home")
+  const [route, setRouteState] = useState<Route>(readHash)
+  const setRoute = useCallback((r: Route) => { writeHash(r); setRouteState(r) }, [])
+  useEffect(() => { const on = () => setRouteState(readHash()); addEventListener("hashchange", on); return () => removeEventListener("hashchange", on) }, [])
+  const back = () => setRoute({ name: "home" })
+  const openScreen = (name: Exclude<Route, { name: "issue-detail" }>["name"]) => setRoute({ name })
 
-  // 設定頁有未儲存的修改時，關頁前提醒
   const dirty = useRef(false)
   useEffect(() => {
     const on = (e: BeforeUnloadEvent) => { if (dirty.current) e.preventDefault() }
@@ -126,15 +146,13 @@ function Main({ settings, onSignOut }: { settings: Settings; onSignOut: () => vo
     return () => removeEventListener("beforeunload", on)
   }, [])
 
-  /** 送出寫入；背景失敗（非離線）時提示，紀錄會留在「沒送出」清單可重試 */
   const send = useCallback((p: Promise<unknown>) => { p.catch((e) => toast.error("沒送出去", { description: String((e as Error).message ?? e) })) }, [])
   const offlineNote = (net: NetworkState, msg: string) => (net !== "online" ? `${msg}（${net === "offline" ? "離線" : "連不到後端"}，待上傳）` : msg)
 
-  /** 新增一筆＋toast（「復原」＝軟刪除） */
-  function add(table: LogTable, body: object, msg: string, opts: { ts?: string } = {}) {
+  function add(table: LogTable, body: object, msg: string, opts: { ts?: string; onUndo?: () => void } = {}) {
     const id = uuid()
     send(api.log(table, encodeFields(body) as never, { ...opts, id }))
-    toast(offlineNote(network, msg), { action: { label: "復原", onClick: () => send(api.remove(table, id)) }, duration: 5000 })
+    toast(offlineNote(network, msg), { action: { label: "復原", onClick: () => { opts.onUndo?.(); send(api.remove(table, id)) } }, duration: 5000 })
     return id
   }
   const edit = (table: LogTable, id: string, patch: object) => send(api.edit(table, id, encodeFields(patch) as never))
@@ -149,7 +167,6 @@ function Main({ settings, onSignOut }: { settings: Settings; onSignOut: () => vo
       `已記錄清砂：尿塊 ${v.urine_count}・便 ${v.stool_count}・正常`)
   const retrySync = () => { void api.retryFailed().then((n) => { if (n) toast.success("送出了") }) }
 
-  // 照片：選好先壓縮，送出回報時再上傳
   const photos = useRef(new Map<string, { base64: string; name: string }>())
   const pickPhoto = async () => {
     const file = await pickImageFile()
@@ -165,25 +182,122 @@ function Main({ settings, onSignOut }: { settings: Settings; onSignOut: () => vo
     }
   }
 
+  const [filters, setFilters] = useState<TimelineFilter[]>([])
+  const [scrollTop, setScrollTop] = useState(0)
+  const mainRef = useRef<HTMLElement | null>(null)
+  const moreBtnRef = useRef<HTMLButtonElement | null>(null)
+  const cursorRef = useRef<string | null>(null)
+  const inflightRef = useRef(false)
+  const [pager, setPager] = useState({ hasMore: true as boolean, loading: false, error: null as null | "offline" | "fail", suppressAuto: false })
+
+  useEffect(() => { setPager((p) => ({ ...p, suppressAuto: false })) }, [filters])
+
+  const historyFrom = cursorRef.current ?? (snap ? firstBefore(snap.serverTime, snap.days, now) : firstBefore("", 7, now))
+
+  const loadOlder = useCallback(async () => {
+    if (!data || !snap || !supportsV11(data.version)) return
+    if (inflightRef.current) return
+    if (!navigator.onLine) { setPager((p) => ({ ...p, error: "offline" })); return }
+    const before = cursorRef.current ?? firstBefore(snap.serverTime, snap.days, now)
+    if (api.hasFetchedBefore(before)) return
+    inflightRef.current = true
+    setPager((p) => ({ ...p, loading: true, error: null }))
+    const beforeCount = countMatching(data.all, filters)
+    try {
+      const page = await api.history({ before, days: 30 })
+      cursorRef.current = page.from
+      const peek = api.peek()
+      const afterCount = peek ? countMatching(decodeSnapshot(peek, now).all, filters) : beforeCount
+      setPager((p) => ({
+        ...p, loading: false, hasMore: page.hasMore, error: null,
+        suppressAuto: afterCount <= beforeCount ? true : p.suppressAuto,
+      }))
+    } catch (e) {
+      const offline = e instanceof NetworkError && !navigator.onLine
+      setPager((p) => ({ ...p, loading: false, error: offline ? "offline" : "fail" }))
+    } finally {
+      inflightRef.current = false
+    }
+  }, [api, data, snap, now, filters])
+
+  const endKind = ((): ListEndKind => {
+    const version = data?.version ?? 0
+    if (!supportsV11(version)) return { kind: "update" }
+    if (pager.loading) return { kind: "loading" }
+    if (pager.error === "fail") return { kind: "fail", onRetry: () => { setPager((p) => ({ ...p, suppressAuto: false })); void loadOlder() } }
+    if ((network === "offline" || !navigator.onLine) && pager.hasMore) return { kind: "offline" }
+    if (pager.hasMore === false) return { kind: "end" }
+    return {
+      kind: "more", from: historyFrom,
+      onMore: () => { setPager((p) => ({ ...p, suppressAuto: false })); void loadOlder() },
+      buttonRef: moreBtnRef,
+    }
+  })()
+
+  useEffect(() => {
+    if (route.name !== "timeline") return
+    if (endKind.kind !== "more" || pager.suppressAuto || inflightRef.current) return
+    const root = mainRef.current
+    const target = moreBtnRef.current
+    if (!root || !target) return
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) void loadOlder()
+    }, { root, rootMargin: "600px" })
+    io.observe(target)
+    return () => io.disconnect()
+  }, [route.name, endKind.kind, pager.suppressAuto, loadOlder, data?.all.length])
+
+  useEffect(() => {
+    const on = () => {
+      if (route.name !== "timeline") return
+      if (endKind.kind !== "offline") return
+      const root = mainRef.current
+      if (!root) return
+      const nearEnd = root.scrollHeight - root.scrollTop - root.clientHeight < 800
+      if (nearEnd) void loadOlder()
+    }
+    addEventListener("online", on)
+    return () => removeEventListener("online", on)
+  }, [route.name, endKind.kind, loadOlder])
+
   const all = data?.all ?? []
   const settingsValues: SettingsValues | null = useMemo(() => data && ({
     birthday_est: data.config.birthday_est, birthday_estimated: data.config.birthday_estimated, clinic_name: data.config.clinic_name, clinic_phone: data.config.clinic_phone,
     clinic_24h: data.config.clinic_24h, med_interval_days: data.config.med_interval_days,
+    litter_wash_int_days: data.config.litter_wash_int_days, feeder_clean_int_days: data.config.feeder_clean_int_days, desiccant_int_days: data.config.desiccant_int_days,
   }), [data])
 
+  const emptyConfig = { birthday_est: "", birthday_estimated: true, clinic_name: "", clinic_phone: "", clinic_24h: false, weight_interval_days: 14, deworm_int_days: 90, med_interval_days: {}, litter_clumping: true, litter_wash_int_days: 30, feeder_clean_int_days: 30, desiccant_int_days: 30 }
+
   if (!data) {
+    if (route.name === "timeline") {
+      return (
+        <TimelineScreen now={now} network={network} queuedCount={queuedCount} failedCount={failedCount}
+          entries={[]} loading filters={filters} onFilters={setFilters} from={historyFrom}
+          end={{ kind: "loading" }} mainRef={mainRef} onMainScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+          scrollTop={scrollTop} onHome={back} onUndo={() => {}} onRestore={() => {}} onEdit={() => {}} onRetrySync={retrySync} />
+      )
+    }
     return (
       <HomeScreen cat={CAT} me={me} now={now} status={loadState === "error" ? "error" : "loading"} network={network}
-        queuedCount={queuedCount} failedCount={failedCount} config={{ birthday_est: "", birthday_estimated: true, clinic_name: "", clinic_phone: "", clinic_24h: false, weight_interval_days: 14, deworm_int_days: 90, med_interval_days: {}, litter_clumping: true }}
-        feeds={[]} litter={[]} weights={[]} meds={[]} recent={[]}
-        onOpen={setScreen} onFillEaten={() => {}} onLitterNormal={() => {}} onRetry={() => void refresh()} onRetrySync={retrySync} />
+        queuedCount={queuedCount} failedCount={failedCount} config={emptyConfig}
+        feeds={[]} litter={[]} weights={[]} meds={[]} cares={[]} version={0} recent={[]}
+        onOpen={openScreen} onLogCare={() => {}} onOpenCareHistory={() => {}} onFillEaten={() => {}} onLitterNormal={() => {}} onRetry={() => void refresh()} onRetrySync={retrySync} />
     )
   }
 
   const common = { now, network, queuedCount }
   const { config } = data
 
-  switch (screen) {
+  const logCare = (kind: CareKind, onUndo: () => void) => {
+    if (!supportsV11(data.version)) return
+    const item = CARE_ITEMS.find((x) => x.kind === kind)
+    if (!item) return
+    const nextKey = addDays(dateKey(now), Number(config[item.configKey]) || 30)
+    add("Care", { kind, note: "" }, `已記錄：${item.label}，下次 ${fmtDate(nextKey + "T12:00:00+08:00")}`, { onUndo })
+  }
+
+  switch (route.name) {
     case "feed":
       return (
         <FeedScreen me={me} {...common} foods={data.foods} feeds={data.feeds} onBack={back}
@@ -191,6 +305,22 @@ function Main({ settings, onSignOut }: { settings: Settings; onSignOut: () => vo
             `已記錄：${f.name} ${f.default_qty} ${f.unit}`)}
           onFillEaten={fillEaten}
           onSaveDetail={(id, d) => { edit("Feed", id, d); toast("已儲存選填內容") }}
+          onAddFood={(nf) => {
+            send(api.upsertFood(encodeFields({ food_id: uuid(), brand: "", default_qty: 1, fav: false, active: true, ...nf }) as never))
+            toast(`已加入：${nf.name}`)
+          }}
+          onManageFoods={() => setRoute({ name: "foods" })} />
+      )
+    case "foods":
+      return (
+        <FoodsScreen {...common} foods={data.foods} onBack={() => setRoute({ name: "feed" })}
+          onArchive={(food) => {
+            send(api.upsertFood({ food_id: food.food_id, active: false }))
+            toast(offlineNote(network, `已封存：${food.name}`), {
+              action: { label: "復原", onClick: () => send(api.upsertFood({ food_id: food.food_id, active: true })) }, duration: 5000,
+            })
+          }}
+          onRestore={(food) => { send(api.upsertFood({ food_id: food.food_id, active: true })); toast(`已恢復：${food.name}`) }}
           onAddFood={(nf) => {
             send(api.upsertFood(encodeFields({ food_id: uuid(), brand: "", default_qty: 1, fav: false, active: true, ...nf }) as never))
             toast(`已加入：${nf.name}`)
@@ -226,11 +356,31 @@ function Main({ settings, onSignOut }: { settings: Settings; onSignOut: () => vo
             if (files.length) void uploadPhotos(api, id, files)
           }}
           onResolve={(id) => { edit("Issue", id, { resolved: true }); toast("已標記解決", { action: { label: "復原", onClick: () => edit("Issue", id, { resolved: false }) }, duration: 5000 }) }}
-          onReopen={(id) => { edit("Issue", id, { resolved: false }); toast("已改回未解決") }} />
+          onReopen={(id) => { edit("Issue", id, { resolved: false }); toast("已改回未解決") }}
+          onOpenDetail={(id) => setRoute({ name: "issue-detail", id })} />
       )
+    case "issue-detail": {
+      const issue = data.issues.find((i) => i.id === route.id)
+      return (
+        <IssueDetailScreen {...common} issue={issue} version={data.version} api={api} cache={photoCache}
+          onBack={() => setRoute({ name: "issue" })}
+          onEdit={(id, patch: EntryPatch) => { edit("Issue", id, patch); toast("已儲存修改") }}
+          onUndo={() => {
+            if (!issue) return
+            send(api.remove("Issue", issue.id))
+            toast("已撤銷（劃掉，可復原）", { action: { label: "復原", onClick: () => send(api.restore("Issue", issue.id)) }, duration: 5000 })
+          }}
+          onRestore={() => { if (issue) { send(api.restore("Issue", issue.id)); toast("已復原") } }}
+          onResolve={() => { if (issue) { edit("Issue", issue.id, { resolved: true }); toast("已標記解決", { action: { label: "復原", onClick: () => edit("Issue", issue.id, { resolved: false }) }, duration: 5000 }) } }}
+          onReopen={() => { if (issue) { edit("Issue", issue.id, { resolved: false }); toast("已改回未解決") } }} />
+      )
+    }
     case "timeline":
       return (
-        <TimelineScreen {...common} failedCount={failedCount} entries={all} onHome={back}
+        <TimelineScreen {...common} failedCount={failedCount} entries={all} loading={false}
+          filters={filters} onFilters={setFilters} from={historyFrom} end={endKind}
+          mainRef={mainRef} onMainScroll={(e) => setScrollTop(e.currentTarget.scrollTop)} scrollTop={scrollTop}
+          onHome={back}
           onUndo={(e: AnyEntry) => {
             send(api.remove(TABLE_OF_TYPE[e.type], e.id))
             toast("已撤銷（劃掉，可復原）", { action: { label: "復原", onClick: () => send(api.restore(TABLE_OF_TYPE[e.type], e.id)) }, duration: 5000 })
@@ -256,9 +406,10 @@ function Main({ settings, onSignOut }: { settings: Settings; onSignOut: () => vo
     default:
       return (
         <HomeScreen cat={CAT} me={me} {...common} failedCount={failedCount} config={config} status="ready"
-          feeds={data.feeds} litter={data.litter} weights={data.weights} meds={data.meds}
+          feeds={data.feeds} litter={data.litter} weights={data.weights} meds={data.meds} cares={data.cares} version={data.version}
           recent={timelineItems(all.filter((e) => !e.deleted), now)}
-          onOpen={setScreen} onFillEaten={fillEaten} onLitterNormal={litterNormal}
+          onOpen={openScreen} onLogCare={logCare} onOpenCareHistory={() => { setFilters(["居家維護"]); setRoute({ name: "timeline" }) }}
+          onFillEaten={fillEaten} onLitterNormal={litterNormal}
           onRetry={() => void refresh()} onRetrySync={retrySync} />
       )
   }

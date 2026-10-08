@@ -1,4 +1,4 @@
-import type { ReactNode } from "react"
+import type { ReactNode, Ref, UIEventHandler } from "react"
 import { ChevronLeft } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { SampleBadge } from "@/components/SampleBadge"
@@ -14,16 +14,20 @@ export interface ScreenLayoutProps {
   header?: ReactNode
   /** 標題列下方的橫幅（離線、錯誤） */
   banner?: ReactNode
+  /** 橫幅下方、跟標題列一起固定（篩選晶片列） */
+  toolbar?: ReactNode
   /** 固定在底部拇指區：主要按鈕列或 BottomNav */
   bottom?: ReactNode
   /** 是否顯示「示意資料」徽章（原型預設 true；正式 App 傳 false） */
   sample?: boolean
+  mainRef?: Ref<HTMLElement>
+  onMainScroll?: UIEventHandler<HTMLElement>
   children: ReactNode
   className?: string
 }
 
 /** 畫面骨架：安全區、標題列、可捲動內容、底部拇指區。 */
-export function ScreenLayout({ title, onBack, backLabel = "返回", header, banner, bottom, sample = true, children, className }: ScreenLayoutProps) {
+export function ScreenLayout({ title, onBack, backLabel = "返回", header, banner, toolbar, bottom, sample = true, mainRef, onMainScroll, children, className }: ScreenLayoutProps) {
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
       <header className="sticky top-0 z-10 bg-background pt-[var(--safe-top)]">
@@ -40,8 +44,9 @@ export function ScreenLayout({ title, onBack, backLabel = "返回", header, bann
           </div>
         )}
         {banner && <div className="px-4 pb-2">{banner}</div>}
+        {toolbar && <div className="px-4 pb-2">{toolbar}</div>}
       </header>
-      <main className={cn("relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-6", className)}>{children}</main>
+      <main ref={mainRef} onScroll={onMainScroll} className={cn("relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-6", className)}>{children}</main>
       {bottom}
     </div>
   )

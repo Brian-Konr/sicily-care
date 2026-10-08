@@ -62,7 +62,8 @@
 | Weight | 共同欄位＋kg, method, note |
 | Med | 共同欄位＋kind, product, dose, next_due, note |
 | Issue | 共同欄位＋category, sub, severity, photo_ids, photo_urls, note, resolved |
-| Config | key, value（例如 weight_interval_days=14、deworm_int_days=90） |
+| Care | 共同欄位＋kind（litter_wash＝貓砂盆整盆清洗、feeder_clean＝餵食器清潔、feeder_desiccant＝換乾燥劑）, note |
+| Config | key, value（例如 weight_interval_days=14、deworm_int_days=90、litter_wash_int_days=30、feeder_clean_int_days=30、desiccant_int_days=30） |
 
 ## 3. 照片上傳到 Drive（可行，但有幾個要注意的地方）
 - **流程**：PWA 端先用 canvas 把照片壓成長邊 1600px 的 JPEG（約 0.3 MB），轉成 base64 送出 → Apps Script `doPost` 收到後用 `Utilities.base64Decode` → `Utilities.newBlob` → `DriveApp.getFolderById().createFile()` 存檔 → 回傳 fileId，寫進 Sheet。
@@ -77,7 +78,7 @@
   3. **固定網址**：更新程式時要用「管理部署 → 編輯 → 新版本」，/exec 網址才不會變。
   4. **同時寫入**：`appendRow` 外面要包 `LockService`，避免兩人同時記錄時互相覆蓋。
   5. **分享權限**：照片資料夾和 Sheet 都分享給Mia的 Google 帳號（新檔案會繼承資料夾權限），**不要**設成「知道連結的人都能看」。
-  6. **PWA 裡看照片**：私人 Drive 圖片沒辦法直接用 `<img>` 嵌入。v1 做法是上傳當下顯示本機預覽，歷史紀錄裡只放「開啟」連結。
+  6. **PWA 裡看照片**：私人 Drive 圖片沒辦法直接用 `<img>` 嵌入。異常詳情頁用 `getPhoto` 把照片從 Apps Script 取回再顯示；Google Drive 連結仍保留當後備。
   7. **HEIC 和定位資訊**：用 canvas 重新轉存成 JPEG，會順便把 HEIC 轉掉，也會清掉 EXIF 裡的 GPS 位置。
   8. **容量**：照片佔用 Brian 的 Drive 空間（免費版 15 GB）。Chaewon 可以從 Drive 讀取照片。
 

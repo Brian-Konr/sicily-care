@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { ChoiceSingle } from "@/components/ChoiceGroup"
 import { NetworkBanner } from "@/components/NetworkBanner"
 import { ScreenLayout } from "@/components/ScreenLayout"
-import { StatusBadge } from "@/components/StatusBadge"
+import { DueStatus } from "@/components/DueStatus"
 import { dateKey, fmtDate } from "@/lib/format"
 import { autoNextDue, upcomingMeds } from "@/lib/rules"
 
@@ -36,7 +36,6 @@ export interface MedScreenProps {
 }
 
 const KINDS: MedKind[] = ["體內驅蟲", "體外驅蟲", "內外同驅", "三合一疫苗", "狂犬病疫苗", "用藥"]
-const dueLabel = (d: number) => (d < 0 ? `逾期 ${-d} 天` : d === 0 ? "今天" : d === 1 ? "明天" : `${d} 天後`)
 const d2 = (k: string) => k + "T12:00:00+08:00"
 
 export function MedScreen(p: MedScreenProps) {
@@ -74,7 +73,7 @@ export function MedScreen(p: MedScreenProps) {
                 <p className="text-lg font-bold">{hero.entry.kind}：{hero.entry.product}</p>
                 <p className="text-muted-foreground">上次 {fmtDate(hero.entry.ts)}・{hero.entry.who}・{hero.entry.dose}</p>
               </div>
-              <StatusBadge tone={hero.daysLeft < 0 ? "urgent" : hero.daysLeft <= 3 ? "watch" : "ok"} label={dueLabel(hero.daysLeft)} />
+              <DueStatus daysLeft={hero.daysLeft} />
             </div>
             <Button size="lg" className="w-full whitespace-normal" onClick={() => p.onGiveAgain(hero.entry)}>
               <Check aria-hidden strokeWidth={3} />已給 {hero.entry.product}
@@ -95,7 +94,7 @@ export function MedScreen(p: MedScreenProps) {
                 <li key={u.entry.id} className="flex items-center gap-3 py-2 pr-2 pl-4">
                   <span className="min-w-0 flex-1">
                     <span className="block font-medium">{u.entry.kind}</span>
-                    <span className="block text-muted-foreground">下次 {fmtDate(d2(u.next_due))}・{dueLabel(u.daysLeft)}</span>
+                    <span className="block text-muted-foreground">下次 {fmtDate(d2(u.next_due))}・<DueStatus daysLeft={u.daysLeft} /></span>
                   </span>
                   <Button variant="outline" size="sm" onClick={() => p.onGiveAgain(u.entry)} aria-label={`已給 ${u.entry.product}`}>
                     <Check aria-hidden />已給

@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest'
-import { configChanges, decode, decodeConfig, decodeSnapshot, encodeFields } from '@/data/codec'
+import { apiVersion, configChanges, decode, decodeConfig, decodeSnapshot, encodeFields, supportsV11 } from '@/data/codec'
 import { DEFAULT_CONFIG, DEFAULT_FOODS, INITIAL_WEIGHT } from '@/data/defaults'
 import type { Snapshot } from '@/api/sheet'
 
@@ -60,4 +60,24 @@ test('生日是否估計：舊資料沒有旗標時的推定與寫回', () => {
     .toEqual([['birthday_est', '2025-10-18'], ['birthday_estimated', false]])
   // 只切 Switch
   expect(configChanges({ ...seed, birthday_estimated: false }, DEFAULT_CONFIG)).toEqual([['birthday_estimated', false]])
+})
+
+test('Care 列往返；缺居家間隔當 30；configChanges 只寫有變的間隔', () => {
+  const row = decode.Care({ id: 'c1', ts: '2026-10-01T12:00:00+08:00', who: 'Mia', deleted: false, kind: 'litter_wash', note: '週日' }, none)
+  expect(row).toMatchObject({ kind: 'litter_wash', note: '週日', sync: 'synced' })
+  const missing = decodeConfig({ ...DEFAULT_CONFIG, litter_wash_int_days: undefined as never, feeder_clean_int_days: '', desiccant_int_days: 999 }, NOW)
+  expect([missing.litter_wash_int_days, missing.feeder_clean_int_days, missing.desiccant_int_days]).toEqual([30, 30, 30])
+  const cur = decodeConfig(DEFAULT_CONFIG, NOW)
+  expect(configChanges({ ...cur, litter_wash_int_days: 10 }, DEFAULT_CONFIG)).toEqual([['litter_wash_int_days', 10]])
+  expect(configChanges({ ...cur, litter_wash_int_days: 10 }, DEFAULT_CONFIG).map(([k]) => k)).not.toContain('intervals_are_sample')
+  expect(configChanges({ ...cur, litter_wash_int_days: 10 }, DEFAULT_CONFIG).map(([k]) => k)).not.toContain('birthday_estimated')
+})
+
+test('apiVersion 缺值當 0；supportsV11 要 version>=2', () => {
+  expect(apiVersion(undefined)).toBe(0)
+  expect(apiVersion(1)).toBe(1)
+  expect(apiVersion(2)).toBe(2)
+  expect(supportsV11(0)).toBe(false)
+  expect(supportsV11(1)).toBe(false)
+  expect(supportsV11(2)).toBe(true)
 })

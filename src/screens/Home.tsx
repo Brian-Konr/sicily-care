@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { RefreshCw, Settings, TriangleAlert } from "lucide-react"
-import type { AnyEntry, Config, EatenPct, FeedEntry, LitterEntry, MedEntry, NetworkState, WeightEntry } from "@/types"
+import type { AnyEntry, CareEntry, CareKind, Config, EatenPct, FeedEntry, LitterEntry, MedEntry, NetworkState, WeightEntry } from "@/types"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -13,8 +13,9 @@ import { NetworkBanner } from "@/components/NetworkBanner"
 import { PendingEatenCard } from "@/components/PendingEatenCard"
 import { SampleBadge } from "@/components/SampleBadge"
 import { ScreenLayout } from "@/components/ScreenLayout"
+import { CareCard } from "@/components/CareCard"
+import { DueStatus } from "@/components/DueStatus"
 import { OverdueDot, SummaryCard } from "@/components/SummaryCard"
-import { StatusBadge } from "@/components/StatusBadge"
 import { TimelineItem, TimelineList } from "@/components/TimelineItem"
 import { catAgeLabel } from "@/lib/age"
 import { fmtDate, fmtDiff } from "@/lib/format"
@@ -37,9 +38,13 @@ export interface HomeScreenProps {
   litter: LitterEntry[]
   weights: WeightEntry[]
   meds: MedEntry[]
+  cares: CareEntry[]
+  version: number
   /** 最近紀錄（已排序，新的在前），首頁取前 3 筆 */
   recent: AnyEntry[]
   onOpen: (to: HomeTarget) => void
+  onLogCare: (kind: CareKind, onUndo: () => void) => void
+  onOpenCareHistory: () => void
   onFillEaten: (entryId: string, pct: EatenPct) => void
   /** 清砂一鍵「一切正常 ✓」 */
   onLitterNormal: (v: { urine_count: number; stool_count: number }) => void
@@ -92,6 +97,7 @@ export function HomeScreen(p: HomeScreenProps) {
           <Skeleton className="h-28 rounded-xl" />
           <Skeleton className="h-36 rounded-xl" />
           <div className="grid grid-cols-2 gap-3"><Skeleton className="col-span-2 h-24 rounded-xl" /><Skeleton className="h-24 rounded-xl" /><Skeleton className="h-24 rounded-xl" /></div>
+          <Skeleton className="h-48 rounded-xl" />
           <p className="text-center text-muted-foreground">正在讀取最新紀錄⋯</p>
         </div>
       )}
@@ -157,17 +163,18 @@ export function HomeScreen(p: HomeScreenProps) {
               <SummaryCard emoji="💊" title={`下次${nextMed.entry.kind}`} onClick={() => p.onOpen("med")}
                 value={fmtDate(nextMed.next_due + "T12:00:00+08:00")}
                 meta={nextMed.entry.product}
-                status={nextMed.daysLeft < 0 ? <OverdueDot>已逾期 {-nextMed.daysLeft} 天</OverdueDot>
-                  : nextMed.daysLeft <= 3 ? <StatusBadge tone="watch" label={nextMed.daysLeft === 0 ? "今天" : nextMed.daysLeft === 1 ? "明天到期" : `${nextMed.daysLeft} 天後`} />
-                  : <span className="text-muted-foreground">{nextMed.daysLeft} 天後</span>} />
+                status={<DueStatus daysLeft={nextMed.daysLeft} />} />
             )}
           </div>
+
+          <CareCard cares={p.cares} config={p.config} version={p.version} now={p.now}
+            onLogCare={p.onLogCare} onOpenCareHistory={p.onOpenCareHistory} />
 
           {p.recent.length > 0 && (
             <section aria-labelledby="recent-h">
               <div className="mt-2 mb-2 flex items-center justify-between">
                 <h2 id="recent-h" className="text-lg font-bold">最近紀錄</h2>
-                <Button variant="ghost" size="sm" onClick={() => p.onOpen("timeline")}>看 7 天 ›</Button>
+                <Button variant="ghost" size="sm" onClick={() => p.onOpen("timeline")}>看全部 ›</Button>
               </div>
               <TimelineList label="最近紀錄">
                 {p.recent.slice(0, 3).map((e) => <TimelineItem key={e.id} entry={e} />)}

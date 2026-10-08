@@ -28,6 +28,7 @@ export interface LogTables {
   Weight: RawRow[]
   Med: RawRow[]
   Issue: RawRow[]
+  Care: RawRow[]
 }
 export type LogTable = keyof LogTables
 export type LogRecord = RawRow
@@ -47,4 +48,14 @@ export interface Snapshot {
   serverTime: string
   tables: SnapshotTables
   config: RawConfig
+  version?: number
+}
+
+export interface HistoryPage {
+  ok: true
+  version?: number
+  tables: Partial<LogTables>
+  from: string
+  before: string
+  hasMore: boolean
 }

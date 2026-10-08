@@ -23,11 +23,13 @@ export interface EditEntrySheetProps {
   entry: AnyEntry | null
   onClose: () => void
   onSave: (id: string, patch: EntryPatch) => void
+  maxDate?: string
 }
 
 /** 編輯一筆紀錄（底部 Sheet）：時間、備註＋各類型主要欄位 */
-export function EditEntrySheet({ entry, onClose, onSave }: EditEntrySheetProps) {
+export function EditEntrySheet({ entry, onClose, onSave, maxDate }: EditEntrySheetProps) {
   const [time, setTime] = useState("")
+  const [date, setDate] = useState("")
   const [note, setNote] = useState("")
   const [eaten, setEaten] = useState<EatenPct | null>(null)
   const [urine, setUrine] = useState(0)
@@ -37,6 +39,7 @@ export function EditEntrySheet({ entry, onClose, onSave }: EditEntrySheetProps) 
   useEffect(() => {
     if (!entry) return
     setTime(fmtTime(entry.ts))
+    setDate(dateKey(entry.ts))
     setNote("note" in entry ? entry.note : "")
     if (entry.type === "feed") setEaten(entry.eaten_pct)
     if (entry.type === "litter") { setUrine(entry.urine_count); setStool(entry.stool_count) }
@@ -45,10 +48,13 @@ export function EditEntrySheet({ entry, onClose, onSave }: EditEntrySheetProps) 
 
   const kgNum = Number(kg)
   const kgBad = entry?.type === "weight" && !(kgNum > 0.3 && kgNum < 15)
+  const today = maxDate ?? dateKey(new Date())
+  const dateBad = entry?.type === "care" && (!date || date > today)
 
   const save = () => {
-    if (!entry) return
-    const patch: EntryPatch = { note, ts: `${dateKey(entry.ts)}T${time}:00+08:00` }
+    if (!entry || dateBad) return
+    const day = entry.type === "care" ? date : dateKey(entry.ts)
+    const patch: EntryPatch = { note, ts: `${day}T${time}:00+08:00` }
     if (entry.type === "feed") patch.eaten_pct = eaten
     if (entry.type === "litter") Object.assign(patch, { urine_count: urine, stool_count: stool })
     if (entry.type === "weight") patch.kg = Math.round(kgNum * 100) / 100
@@ -66,6 +72,14 @@ export function EditEntrySheet({ entry, onClose, onSave }: EditEntrySheetProps) 
               <SheetDescription>{describe(entry).emoji} {describe(entry).title}・{entry.who}・{fmtDate(entry.ts)}</SheetDescription>
             </SheetHeader>
             <div className="mt-4 grid gap-5">
+              {entry.type === "care" && (
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-date" className="font-bold">日期</Label>
+                  <Input id="edit-date" type="date" value={date} max={today} onChange={(e) => setDate(e.target.value)}
+                    aria-invalid={dateBad} className="w-48" />
+                  {dateBad && <p role="alert" className="font-bold text-destructive">日期不能在未來。</p>}
+                </div>
+              )}
               <div className="grid gap-2">
                 <Label htmlFor="edit-time" className="font-bold">時間</Label>
                 <Input id="edit-time" type="time" value={time} onChange={(e) => setTime(e.target.value)} className="w-40" />
@@ -94,7 +108,7 @@ export function EditEntrySheet({ entry, onClose, onSave }: EditEntrySheetProps) 
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <Button variant="outline" onClick={onClose}>取消</Button>
-                <Button onClick={save} disabled={kgBad}>儲存</Button>
+                <Button onClick={save} disabled={kgBad || dateBad}>儲存</Button>
               </div>
             </div>
           </>

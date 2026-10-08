@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Check, Eye, OctagonAlert, RotateCcw, TriangleAlert } from "lucide-react"
+import { Check, ChevronRight, Eye, OctagonAlert, RotateCcw, TriangleAlert } from "lucide-react"
 import type { IssueCategory, IssueEntry, NetworkState, PhotoDraft, Severity, VomitSub } from "@/types"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -34,6 +34,7 @@ export interface IssueScreenProps {
   onSubmit: (v: IssueInput) => void
   onResolve: (id: string) => void
   onReopen: (id: string) => void
+  onOpenDetail: (id: string) => void
 }
 
 const CATS: IssueCategory[] = ["嘔吐", "食慾差", "精神差", "眼鼻分泌物或打噴嚏", "抓癢掉毛", "受傷", "其他"]
@@ -73,13 +74,14 @@ export function IssueScreen(p: IssueScreenProps) {
             <ul className="grid gap-2">
               {open.map((i) => (
                 <li key={i.id} className="rounded-xl border bg-card px-4 py-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
+                  <button type="button" className="flex w-full items-start gap-2 text-left" onClick={() => p.onOpenDetail(i.id)}>
+                    <div className="min-w-0 flex-1">
                       <p className="font-bold">{i.category}{i.sub && `・${i.sub}`}</p>
                       <p className="text-muted-foreground">{fmtWhen(i.ts, p.now)}・{i.who}{i.photo_ids.length > 0 && <span className="whitespace-nowrap">・照片 {i.photo_ids.length} 張</span>}</p>
                     </div>
                     <StatusBadge tone={sevTone(i.severity)} label={i.severity} />
-                  </div>
+                    <ChevronRight className="size-6 flex-none text-muted-foreground" aria-hidden />
+                  </button>
                   {i.note && <p className="mt-1">{i.note}</p>}
                   <Button variant="outline" size="sm" className="mt-2" onClick={() => p.onResolve(i.id)}><Check aria-hidden />標記已解決</Button>
                 </li>
@@ -128,10 +130,10 @@ export function IssueScreen(p: IssueScreenProps) {
             <ul className="divide-y rounded-xl border bg-card">
               {done.map((i) => (
                 <li key={i.id} className="flex items-center gap-2 py-2 pr-2 pl-4">
-                  <span className="min-w-0 flex-1">
+                  <button type="button" className="min-w-0 flex-1 text-left" onClick={() => p.onOpenDetail(i.id)}>
                     <span className="block font-medium">{i.category}{i.sub && `・${i.sub}`}</span>
                     <span className="block text-muted-foreground">{fmtWhen(i.ts, p.now)}・{i.who}</span>
-                  </span>
+                  </button>
                   <StatusBadge tone="ok" label="已解決" />
                   <Button variant="ghost" size="icon" onClick={() => p.onReopen(i.id)} aria-label={`改回未解決：${i.category}`}><RotateCcw aria-hidden /></Button>
                 </li>

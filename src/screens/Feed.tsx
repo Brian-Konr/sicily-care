@@ -3,11 +3,10 @@ import { ChevronDown, Plus, Star } from "lucide-react"
 import type { EatenPct, FeedEntry, Food, FoodKind, NetworkState, Reaction } from "@/types"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
+import { AddFoodSheet } from "@/components/AddFoodSheet"
 import { ChoiceSingle } from "@/components/ChoiceGroup"
 import { DuplicateWarningSheet } from "@/components/DuplicateWarningSheet"
 import { EatenPicker } from "@/components/EatenPicker"
@@ -43,10 +42,10 @@ export interface FeedScreenProps {
   onFillEaten: (entryId: string, pct: EatenPct) => void
   onSaveDetail: (entryId: string, patch: FeedDetailPatch) => void
   onAddFood: (food: NewFood) => void
+  onManageFoods: () => void
 }
 
 const REACTIONS: Reaction[] = ["喜歡", "普通", "勉強", "拒吃"]
-const KINDS: FoodKind[] = ["副食罐", "零食", "肉泥", "凍乾"]
 const KIND_EMOJI: Record<FoodKind, string> = { "副食罐": "🥫", "零食": "🍪", "肉泥": "🧴", "凍乾": "🍗" }
 
 export function FeedScreen(p: FeedScreenProps) {
@@ -54,7 +53,6 @@ export function FeedScreen(p: FeedScreenProps) {
   const [expanded, setExpanded] = useState(false)
   const [detail, setDetail] = useState<FeedDetailPatch | null>(null)
   const [addOpen, setAddOpen] = useState(false)
-  const [nf, setNf] = useState<NewFood>({ name: "", kind: "副食罐", unit: "罐", grams_per_unit: null })
 
   const active = p.foods.filter((f) => f.active)
   const recentIds = [...new Set([...p.feeds].sort((a, b) => Date.parse(b.ts) - Date.parse(a.ts)).map((e) => e.food_id))]
@@ -72,7 +70,7 @@ export function FeedScreen(p: FeedScreenProps) {
     else { p.onLog(food); setExpanded(false); setDetail(null) }
   }
 
-  const foodList = (list: Food[]) => (
+  const foodList = (list: Food[], empty: string) => (
     <div className="grid gap-2">
       {list.map((f) => (
         <button key={f.food_id} type="button" onClick={() => tap(f)}
@@ -86,7 +84,7 @@ export function FeedScreen(p: FeedScreenProps) {
           <span className="font-num font-bold whitespace-nowrap">{f.default_qty} {f.unit}</span>
         </button>
       ))}
-      {list.length === 0 && <p className="py-4 text-center text-muted-foreground">還沒有收藏。記錄時點 ☆ 就能加入。</p>}
+      {list.length === 0 && <p className="py-4 text-center text-muted-foreground">{empty}</p>}
     </div>
   )
 
@@ -128,14 +126,17 @@ export function FeedScreen(p: FeedScreenProps) {
         )}
 
         <section aria-labelledby="pick-h" className="grid gap-3">
-          <h2 id="pick-h" className="text-lg font-bold">點一下就記錄</h2>
+          <div className="flex items-center justify-between gap-2">
+            <h2 id="pick-h" className="text-lg font-bold">點一下就記錄</h2>
+            <Button variant="ghost" size="sm" onClick={p.onManageFoods}>管理品項 ›</Button>
+          </div>
           <Tabs defaultValue="recent">
             <TabsList className="w-full">
               <TabsTrigger value="recent">近期</TabsTrigger>
               <TabsTrigger value="fav">收藏</TabsTrigger>
             </TabsList>
-            <TabsContent value="recent" className="pt-2">{foodList(recent)}</TabsContent>
-            <TabsContent value="fav" className="pt-2">{foodList(favs)}</TabsContent>
+            <TabsContent value="recent" className="pt-2">{foodList(recent, "還沒有品項，先新增一個吧。")}</TabsContent>
+            <TabsContent value="fav" className="pt-2">{foodList(favs, "還沒有收藏。記錄時點 ☆ 就能加入。")}</TabsContent>
           </Tabs>
           <Button variant="outline" onClick={() => setAddOpen(true)}><Plus aria-hidden />新增食物</Button>
         </section>
@@ -170,33 +171,7 @@ export function FeedScreen(p: FeedScreenProps) {
           onConfirm={() => { p.onLog(dup.food); setDup(null); setExpanded(false); setDetail(null) }} />
       )}
 
-      <Sheet open={addOpen} onOpenChange={setAddOpen}>
-        <SheetContent side="bottom" className="gap-0 px-5 pt-3" onOpenAutoFocus={(e) => e.preventDefault()}>
-          <div aria-hidden className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-input" />
-          <SheetHeader className="p-0 pr-10"><SheetTitle className="text-xl font-bold">新增食物</SheetTitle></SheetHeader>
-          <div className="mt-4 grid gap-4">
-            <div className="grid gap-2">
-              <Label htmlFor="nf-name" className="font-bold">名稱</Label>
-              <Input id="nf-name" value={nf.name} onChange={(e) => setNf({ ...nf, name: e.target.value })} placeholder="例如：鮪魚慕斯罐" />
-            </div>
-            <ChoiceSingle label="類型" options={KINDS} value={nf.kind} layout="grid" cols={4} onChange={(v) => v && setNf({ ...nf, kind: v })} />
-            <div className="grid grid-cols-2 gap-3">
-              <div className="grid gap-2">
-                <Label htmlFor="nf-unit" className="font-bold">單位</Label>
-                <Input id="nf-unit" value={nf.unit} onChange={(e) => setNf({ ...nf, unit: e.target.value })} placeholder="罐、條、顆" />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="nf-g" className="font-bold">每單位公克</Label>
-                <Input id="nf-g" inputMode="decimal" value={nf.grams_per_unit ?? ""} placeholder="選填"
-                  onChange={(e) => setNf({ ...nf, grams_per_unit: e.target.value ? Number(e.target.value) : null })} />
-              </div>
-            </div>
-            <Button disabled={!nf.name.trim() || !nf.unit.trim()} onClick={() => { p.onAddFood(nf); setAddOpen(false); setNf({ name: "", kind: "副食罐", unit: "罐", grams_per_unit: null }) }}>
-              加入清單
-            </Button>
-          </div>
-        </SheetContent>
-      </Sheet>
+      <AddFoodSheet open={addOpen} onOpenChange={setAddOpen} onAdd={p.onAddFood} />
     </ScreenLayout>
   )
 }

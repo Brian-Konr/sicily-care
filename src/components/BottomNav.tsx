@@ -10,7 +10,7 @@ export interface BottomNavProps {
 
 const ITEMS: { id: BottomNavTarget; label: string; Icon: typeof House }[] = [
   { id: "home", label: "首頁", Icon: House },
-  { id: "timeline", label: "7 天紀錄", Icon: History },
+  { id: "timeline", label: "紀錄", Icon: History },
 ]
 
 export function BottomNav({ current, onNavigate }: BottomNavProps) {

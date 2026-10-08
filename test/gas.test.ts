@@ -18,9 +18,10 @@ function ready() {
 }
 
 describe('setupSicilyCare', () => {
-  test('建立 7 個分頁、表頭、預設 Config、照片資料夾與密鑰；刪掉空白工作表1', () => {
+  test('建立 8 個分頁、表頭、預設 Config、照片資料夾與密鑰；刪掉空白工作表1', () => {
     const { sheets, props, folders, logs, g } = ready()
-    expect([...sheets.keys()].sort()).toEqual(['Config', 'Feed', 'Foods', 'Issue', 'Litter', 'Med', 'Weight'])
+    expect([...sheets.keys()].sort()).toEqual(['Care', 'Config', 'Feed', 'Foods', 'Issue', 'Litter', 'Med', 'Weight'])
+    expect(sheets.get('Care')!.data[0]).toEqual(['id', 'ts', 'who', 'deleted', 'kind', 'note'])
     for (const [name, cols] of Object.entries(g.SCHEMA as Record<string, string[]>)) {
       expect(sheets.get(name)!.data[0]).toEqual(cols)
       expect(sheets.get(name)!.frozen).toBe(1)
@@ -42,6 +43,9 @@ describe('setupSicilyCare', () => {
     expect(env.sheets.get('Weight')!.data[0]).toEqual(['id', 'ts', 'who', 'deleted', 'kg', 'method', 'note'])
     expect(env.sheets.get('Weight')!.data).toHaveLength(2)
     expect(env.sheets.get('Config')!.data.filter((r) => r[0] === 'users')).toHaveLength(1)
+    expect(env.sheets.get('Config')!.data.filter((r) => r[0] === 'litter_wash_int_days')).toHaveLength(1)
+    expect(env.sheets.get('Config')!.data.filter((r) => r[0] === 'feeder_clean_int_days')).toHaveLength(1)
+    expect(env.sheets.get('Config')!.data.filter((r) => r[0] === 'desiccant_int_days')).toHaveLength(1)
     expect(env.folders).toHaveLength(1)
   })
 })
@@ -157,7 +161,95 @@ describe('doPost', () => {
 
   test('GET 沒帶密鑰只回健康檢查', () => {
     const { get } = ready()
-    expect(get({})).toEqual({ ok: true, service: 'sicily-care', version: 1 })
+    expect(get({})).toEqual({ ok: true, service: 'sicily-care', version: 2 })
     expect(get({ secret: 'bad' }).error).toBe('unauthorized')
+  })
+})
+
+describe('v1.1 Care / history / getPhoto', () => {
+  const D = 24 * H
+  const BEFORE = '2026-10-09T00:00:00+08:00'
+  const beforeMs = Date.parse(BEFORE)
+
+  test('read 回 version 2；40 天前的 Care 仍在；10 天前的 Feed 不在 7 天視窗；已撤銷 Care 也帶回', () => {
+    const { call } = ready()
+    call('append', { table: 'Care', record: { id: 'c-old', ts: iso(40 * D), who: 'Brian', kind: 'litter_wash', note: '' } })
+    call('append', { table: 'Care', record: { id: 'c-del', ts: iso(2 * D), who: 'Mia', kind: 'feeder_clean', note: '' } })
+    call('softDelete', { table: 'Care', id: 'c-del' })
+    call('append', { table: 'Feed', record: { id: 'f-old', ts: iso(10 * D), who: 'Mia' } })
+    const r = call('read')
+    expect(r.version).toBe(2)
+    expect(r.tables.Care.map((x: { id: string }) => x.id).sort()).toEqual(['c-del', 'c-old'])
+    expect(r.tables.Care.find((x: { id: string }) => x.id === 'c-del').deleted).toBe(true)
+    expect(r.tables.Feed.map((x: { id: string }) => x.id)).not.toContain('f-old')
+  })
+
+  test('history 半開視窗、hasMore、預設 30 天、上限 90、省略 tables 含 Care', () => {
+    const { call } = ready()
+    const fromMs = beforeMs - 30 * D
+    const FROM = '2026-09-09T00:00:00+08:00'
+    expect(Date.parse(FROM)).toBe(fromMs)
+    call('append', { table: 'Care', record: { id: 'edge-before', ts: BEFORE, who: 'Brian', kind: 'litter_wash' } })
+    call('append', { table: 'Care', record: { id: 'edge-from', ts: FROM, who: 'Brian', kind: 'feeder_clean' } })
+    call('append', { table: 'Care', record: { id: 'before-from', ts: '2026-09-08T23:59:59+08:00', who: 'Brian', kind: 'feeder_desiccant' } })
+    call('append', { table: 'Care', record: { id: 'in-win-del', ts: '2026-09-20T12:00:00+08:00', who: 'Mia', kind: 'litter_wash' } })
+    call('softDelete', { table: 'Care', id: 'in-win-del' })
+
+    const r = call('history', { before: BEFORE, days: 30 })
+    expect(r.ok).toBe(true)
+    expect(r.version).toBe(2)
+    expect(Date.parse(r.from)).toBe(fromMs)
+    expect(Date.parse(r.before)).toBe(beforeMs)
+    expect(r.tables.Care.map((x: { id: string }) => x.id)).not.toContain('edge-before')
+    expect(r.tables.Care.map((x: { id: string }) => x.id)).toContain('edge-from')
+    expect(r.tables.Care.map((x: { id: string }) => x.id)).not.toContain('before-from')
+    expect(r.hasMore).toBe(true)
+    expect(r.tables.Care.find((x: { id: string }) => x.id === 'in-win-del').deleted).toBe(true)
+    expect(Object.keys(r.tables).sort()).toEqual(['Care', 'Feed', 'Issue', 'Litter', 'Med', 'Weight'])
+
+    const omitted = call('history', { before: BEFORE })
+    expect(Date.parse(omitted.from)).toBe(fromMs)
+
+    const capped = call('history', { before: BEFORE, days: 100 })
+    expect(Date.parse(capped.from)).toBe(beforeMs - 90 * D)
+
+    expect(call('history', { days: 30 }).error).toBe('bad_record')
+    expect(call('history', { before: BEFORE, tables: ['Nope'] }).error).toBe('bad_table')
+  })
+
+  test('拿不到鎖時 history 與 getPhoto 仍可用，append 回 busy', () => {
+    const env = loadGas({ lockBusy: true })
+    env.g.setupSicilyCare()
+    const secret = env.props.get('SHARED_SECRET')!
+    const post = (body: Record<string, unknown>) => env.post({ secret, ...body })
+    expect(post({ action: 'append', table: 'Weight', record: { id: 'w', ts: iso(0), who: 'Mia' } }).error).toBe('busy')
+    expect(post({ action: 'history', before: BEFORE, days: 30 }).ok).toBe(true)
+    expect(post({ action: 'getPhoto', fileId: 'missing' }).error).toBe('forbidden')
+  })
+
+  test('getPhoto 讀得到自己上傳的檔；外來與未知 id 是 forbidden；缺少 fileId 是 bad_record', () => {
+    const env = ready()
+    const bytes = [...Buffer.from('fake-jpeg')]
+    const data = Buffer.from(bytes).toString('base64')
+    const up = env.call('uploadPhoto', { filename: 'a.jpg', mime: 'image/jpeg', data })
+    const got = env.call('getPhoto', { fileId: up.fileId })
+    expect(got.ok).toBe(true)
+    expect(got.mime).toBe('image/jpeg')
+    expect([...Buffer.from(got.data, 'base64')]).toEqual(bytes)
+
+    env.files.push({ id: 'foreign', folder: 'somewhere-else', mime: 'image/jpeg', bytes, name: 'x.jpg' })
+    expect(env.call('getPhoto', { fileId: 'foreign' }).error).toBe('forbidden')
+    expect(env.call('getPhoto', { fileId: 'unknown' }).error).toBe('forbidden')
+    expect(env.call('getPhoto', {}).error).toBe('bad_record')
+  })
+
+  test('append Care 拒絕未知 kind；同一個有效 id 重送是 duplicate', () => {
+    const { call, sheets } = ready()
+    expect(call('append', { table: 'Care', record: { id: 'c1', ts: iso(0), who: 'Mia', kind: 'nope' } }).error).toBe('bad_record')
+    const rec = { id: 'c1', ts: iso(0), who: 'Mia', kind: 'litter_wash', note: '' }
+    expect(call('append', { table: 'Care', record: rec }).ok).toBe(true)
+    const again = call('append', { table: 'Care', record: rec })
+    expect(again.duplicate).toBe(true)
+    expect(sheets.get('Care')!.data).toHaveLength(2)
   })
 })

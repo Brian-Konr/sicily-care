@@ -76,6 +76,7 @@ export function useSicily(settings: Settings, now: Date) {
   return {
     api,
     data,
+    snap,
     /** 首頁用：第一次讀取中＝loading；讀不到又沒有快取＝error */
     loadState: data ? ('ready' as const) : loadError ? ('error' as const) : ('loading' as const),
     loadError,

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { UserRound } from "lucide-react"
 import type { MedKind, SettingsValues } from "@/types"
+import { CARE_ITEMS } from "@/lib/care"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
@@ -107,6 +108,16 @@ export function SettingsScreen(p: SettingsScreenProps) {
             <FormRow key={it.kind} label={it.label}>
               <Stepper label={`${it.label}間隔`} showLabel={false} editable unit="天" min={1} max={it.max} step={it.step}
                 value={draft.med_interval_days[it.kind] ?? 30} onChange={(v) => setInterval(it.kind, v)} />
+            </FormRow>
+          ))}
+        </FormSection>
+
+        <FormSection id="care" title="居家維護"
+          description="單位是天。從上次做完那天開始算，到期前 3 天首頁會提醒。">
+          {CARE_ITEMS.map((it) => (
+            <FormRow key={it.kind} label={it.label}>
+              <Stepper label={`${it.label}間隔`} showLabel={false} editable unit="天" min={1} max={365} step={5}
+                value={draft[it.configKey]} onChange={(v) => set(it.configKey, v)} />
             </FormRow>
           ))}
         </FormSection>

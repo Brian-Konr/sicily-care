@@ -6,6 +6,9 @@ import { tpeIso } from './time'
 import { NetworkError } from './errors'
 import type { Adapter, Op, Response } from './types'
 
+const CARE_KINDS = ['litter_wash', 'feeder_clean', 'feeder_desiccant']
+const WINDOWED: LogTable[] = ['Feed', 'Litter', 'Issue']
+
 const SCHEMA_KEYS: Record<LogTable, string[]> = {
   Feed: ['id', 'ts', 'who', 'deleted', 'food_id', 'food_name', 'qty', 'unit', 'grams_est', 'eaten_pct', 'reaction', 'note'],
   Litter: ['id', 'ts', 'who', 'deleted', 'all_normal', 'urine_count', 'urine_size', 'urine_flags', 'stool_count', 'stool_cat',
@@ -13,6 +16,7 @@ const SCHEMA_KEYS: Record<LogTable, string[]> = {
   Weight: ['id', 'ts', 'who', 'deleted', 'kg', 'method', 'note'],
   Med: ['id', 'ts', 'who', 'deleted', 'kind', 'product', 'dose', 'next_due', 'note'],
   Issue: ['id', 'ts', 'who', 'deleted', 'category', 'sub', 'severity', 'photo_ids', 'photo_urls', 'note', 'resolved'],
+  Care: ['id', 'ts', 'who', 'deleted', 'kind', 'note'],
 }
 const LOG_TABLES = Object.keys(SCHEMA_KEYS) as LogTable[]
 type Row = Record<string, unknown>
@@ -25,7 +29,7 @@ export function seedData(): Db {
   return {
     Foods: DEFAULT_FOODS.map((f) => ({ ...f })),
     Config: { ...DEFAULT_CONFIG },
-    Feed: [], Litter: [], Weight: [{ ...INITIAL_WEIGHT }], Med: [], Issue: [],
+    Feed: [], Litter: [], Weight: [{ ...INITIAL_WEIGHT }], Med: [], Issue: [], Care: [],
   }
 }
 
@@ -39,12 +43,13 @@ export function createMockAdapter(opts: { storage?: Storage; key?: string; now?:
   let offline = false
   let photoSeq = 0
   let memory: Db | null = null
+  const photos = new Map<string, { mime: string; data: string }>()
   const save = (db: Db) => { memory = db; storage?.setItem(key, JSON.stringify(db)) }
   const load = (): Db => {
     const raw = storage ? storage.getItem(key) : memory && JSON.stringify(memory)
-    if (raw) return JSON.parse(raw) as Db
-    const db = seedData()
-    save(db)
+    const db = raw ? JSON.parse(raw) as Db : seedData()
+    if (!db.Care) db.Care = []
+    if (!raw) save(db)
     return db
   }
   const pick = (table: LogTable, rec: Row): Row => Object.fromEntries(SCHEMA_KEYS[table].map((k) => [k, rec[k] ?? '']))
@@ -58,18 +63,22 @@ export function createMockAdapter(opts: { storage?: Storage; key?: string; now?:
         const tables = {} as Snapshot['tables']
         for (const t of LOG_TABLES) {
           ;(tables as unknown as Record<string, Row[]>)[t] = db[t].filter((r) => {
-            if (t === 'Weight' || t === 'Med') return true
+            if (!WINDOWED.includes(t)) return true
             if (t === 'Issue' && !r.resolved && !r.deleted) return true
             return Date.parse(String(r.ts)) >= since
           })
         }
         tables.Foods = db.Foods
-        return { ok: true, days, serverTime: tpeIso(now()), tables, config: db.Config }
+        return { ok: true, version: 2, days, serverTime: tpeIso(now()), tables, config: db.Config }
       }
       case 'append': {
         if (!LOG_TABLES.includes(op.table)) return bad('bad_table', op.table)
         const r = op.record as unknown as Row
         if (!r.id || !r.ts || !r.who) return bad('bad_record', '缺少 id、ts 或 who')
+        if (op.table === 'Care') {
+          if (!r.kind) return bad('bad_record', '缺少 kind')
+          if (!CARE_KINDS.includes(String(r.kind))) return bad('bad_record', 'kind 只能是指定的居家維護項目')
+        }
         const existing = db[op.table].find((x) => x.id === r.id)
         if (existing) return { ok: true, duplicate: true, record: existing }
         const row = pick(op.table, { ...r, deleted: !!r.deleted })
@@ -82,6 +91,9 @@ export function createMockAdapter(opts: { storage?: Storage; key?: string; now?:
         const row = db[op.table].find((x) => x.id === op.id)
         if (!row) return bad('not_found', op.id)
         const patch = op.action === 'softDelete' ? { deleted: true } : op.patch
+        if (op.table === 'Care' && patch && 'kind' in patch && patch.kind !== undefined && patch.kind !== '') {
+          if (!CARE_KINDS.includes(String(patch.kind))) return bad('bad_record', 'kind 只能是指定的居家維護項目')
+        }
         for (const [k, v] of Object.entries(patch)) {
           if (['id', 'who'].includes(k) || !SCHEMA_KEYS[op.table].includes(k)) continue
           row[k] = v
@@ -97,10 +109,42 @@ export function createMockAdapter(opts: { storage?: Storage; key?: string; now?:
         else db.Foods.push(op.record)
         return { ok: true, record: op.record }
       }
-      case 'uploadPhoto':
+      case 'uploadPhoto': {
         if (!op.data) return bad('bad_photo', '缺少照片資料')
         photoSeq += 1
-        return { ok: true, fileId: `mock-photo-${photoSeq}`, url: '' }
+        const fileId = `mock-photo-${photoSeq}`
+        photos.set(fileId, { mime: op.mime || 'image/jpeg', data: op.data })
+        return { ok: true, fileId, url: '' }
+      }
+      case 'getPhoto': {
+        if (!op.fileId) return bad('bad_record', '缺少照片')
+        const p = photos.get(op.fileId)
+        if (!p) return bad('forbidden', '讀不到這張照片')
+        return { ok: true, mime: p.mime, data: p.data }
+      }
+      case 'history': {
+        const beforeMs = Date.parse(op.before)
+        if (!Number.isFinite(beforeMs)) return bad('bad_record', '缺少有效的 before')
+        const days = Math.min(90, Math.max(1, parseInt(String(op.days ?? ''), 10) || 30))
+        const fromMs = beforeMs - days * 86400000
+        let names = op.tables
+        if (names === undefined || (Array.isArray(names) && names.length === 0)) names = [...LOG_TABLES]
+        else if (!Array.isArray(names)) return bad('bad_record', 'tables 格式不對')
+        for (const t of names) {
+          if (!LOG_TABLES.includes(t as LogTable)) return bad('bad_table', t)
+        }
+        const tables: Record<string, Row[]> = {}
+        let hasMore = false
+        for (const t of names) {
+          tables[t] = db[t as LogTable].filter((r) => {
+            const ts = Date.parse(String(r.ts))
+            if (!Number.isFinite(ts)) return false
+            if (ts < fromMs) { hasMore = true; return false }
+            return ts < beforeMs
+          })
+        }
+        return { ok: true, version: 2, tables, from: tpeIso(fromMs), before: tpeIso(beforeMs), hasMore }
+      }
       default:
         return bad('bad_action', (op as { action: string }).action)
     }

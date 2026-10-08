@@ -51,6 +51,12 @@ export async function flushPhotoOutbox(api: Api, storage: Storage = localStorage
 }
 export const pendingPhotoCount = (storage: Storage = localStorage) => load(storage).reduce((n, j) => n + j.photos.length, 0)
 
+export function pendingLocalPhotos(issueId: string, storage: Storage = localStorage): { dataUrl: string; name: string }[] {
+  const job = load(storage).find((j) => j.issueId === issueId)
+  if (!job) return []
+  return job.photos.map((p) => ({ dataUrl: `data:image/jpeg;base64,${p.base64}`, name: p.name }))
+}
+
 async function runJob(api: Api, job: PendingPhotos, storage: Storage): Promise<boolean> {
   while (job.photos.length) {
     try {

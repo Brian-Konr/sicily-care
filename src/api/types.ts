@@ -9,6 +9,8 @@ export type Op =
   | { action: 'setConfig'; key: string; value: string | number | boolean }
   | { action: 'upsertFood'; record: Food & { food_id: string } }
   | { action: 'uploadPhoto'; data: string; mime: string; filename?: string }
+  | { action: 'history'; before: string; days?: number; tables?: string[] }
+  | { action: 'getPhoto'; fileId: string }
 
 export type Fail = { ok: false; error: string; message?: string }
 export type Ok<T = object> = { ok: true } & T
@@ -20,4 +22,4 @@ export interface Adapter {
   call(op: Op): Promise<Response>
 }
 
-export type WriteOp = Exclude<Op, { action: 'read' } | { action: 'uploadPhoto' }>
+export type WriteOp = Exclude<Op, { action: 'read' } | { action: 'uploadPhoto' } | { action: 'history' } | { action: 'getPhoto' }>

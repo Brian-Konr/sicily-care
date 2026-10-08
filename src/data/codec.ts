@@ -1,11 +1,13 @@
 // Sheet 原始列 ⇄ 畫面型別（src/types.ts）。只在這裡處理 Sheet 的怪癖，畫面與規則都拿乾淨的型別。
-import type { AnyEntry, Config, FeedEntry, Food, IssueEntry, LitterEntry, MedEntry, MedKind, SyncState, WeightEntry } from '@/types'
+import type { AnyEntry, CareEntry, CareKind, Config, FeedEntry, Food, IssueEntry, LitterEntry, MedEntry, MedKind, SyncState, WeightEntry } from '@/types'
 import type { Cell, LogTable, RawConfig, RawFood, RawRow, Snapshot } from '@/api/sheet'
 import { ageInMonths, resolveBirthdayEstimated } from '@/lib/age'
 import { DEFAULT_CONFIG, MED_INTERVAL_KEYS } from './defaults'
 
-export const TYPE_OF_TABLE = { Feed: 'feed', Litter: 'litter', Weight: 'weight', Med: 'med', Issue: 'issue' } as const
-export const TABLE_OF_TYPE = { feed: 'Feed', litter: 'Litter', weight: 'Weight', med: 'Med', issue: 'Issue' } as const satisfies Record<AnyEntry['type'], LogTable>
+export const TYPE_OF_TABLE = { Feed: 'feed', Litter: 'litter', Weight: 'weight', Med: 'med', Issue: 'issue', Care: 'care' } as const
+export const TABLE_OF_TYPE = { feed: 'Feed', litter: 'Litter', weight: 'Weight', med: 'Med', issue: 'Issue', care: 'Care' } as const satisfies Record<AnyEntry['type'], LogTable>
+
+const CARE_INT_KEYS = ['litter_wash_int_days', 'feeder_clean_int_days', 'desiccant_int_days'] as const
 
 const bool = (v: unknown) => v === true || v === 'TRUE' || v === 'true'
 const str = (v: unknown) => (v === undefined || v === null ? '' : String(v))
@@ -43,6 +45,9 @@ export const decode = {
     ...base(r, f), category: str(r.category) as IssueEntry['category'], sub: orNull(r.sub), severity: str(r.severity) as IssueEntry['severity'],
     photo_ids: list(r.photo_ids), photo_urls: list(r.photo_urls), note: str(r.note), resolved: bool(r.resolved),
   }),
+  Care: (r: RawRow, f: Set<string>): CareEntry => ({
+    ...base(r, f), kind: str(r.kind) as CareKind, note: str(r.note),
+  }),
 }
 
 export function decodeFood(r: RawFood): Food {
@@ -70,7 +75,23 @@ export function decodeConfig(raw: RawConfig, now: Date): Config {
     deworm_int_days: num(c.deworm_int_days, 90),
     med_interval_days,
     litter_clumping: c.litter_clumping === '' ? true : bool(c.litter_clumping),
+    litter_wash_int_days: clampCareDays(c.litter_wash_int_days),
+    feeder_clean_int_days: clampCareDays(c.feeder_clean_int_days),
+    desiccant_int_days: clampCareDays(c.desiccant_int_days),
   }
+}
+
+function clampCareDays(v: unknown): number {
+  const n = num(v, 30)
+  return n >= 1 && n <= 365 ? n : 30
+}
+
+export function apiVersion(raw: unknown): number {
+  return typeof raw === 'number' && Number.isFinite(raw) ? raw : 0
+}
+
+export function supportsV11(version: number): boolean {
+  return version >= 2
 }
 
 /** 畫面用的 Config 部分欄位 → 要寫進 Config 分頁的 key/value（只回傳有變的） */
@@ -94,6 +115,10 @@ export function configChanges(next: Partial<Config>, raw: RawConfig): [string, C
     }
     if (out.some(([k]) => Object.values(MED_INTERVAL_KEYS).includes(k))) put('intervals_are_sample', false)
   }
+  for (const k of CARE_INT_KEYS) {
+    const v = next[k]
+    if (v !== undefined) put(k, v)
+  }
   return out
 }
 
@@ -113,11 +138,13 @@ export interface AppData {
   weights: WeightEntry[]
   meds: MedEntry[]
   issues: IssueEntry[]
+  cares: CareEntry[]
   foods: Food[]
   config: Config
   rawConfig: RawConfig
   users: [string, string]
   intervalsAreSample: boolean
+  version: number
   /** 全部紀錄（含已撤銷），給時間軸用 */
   all: AnyEntry[]
 }
@@ -129,18 +156,20 @@ export function decodeSnapshot(s: Snapshot, now: Date, failedIds: Set<string> = 
   const weights = t.Weight.map((r) => decode.Weight(r, failedIds))
   const meds = t.Med.map((r) => decode.Med(r, failedIds))
   const issues = t.Issue.map((r) => decode.Issue(r, failedIds))
+  const cares = (t.Care ?? []).map((r) => decode.Care(r, failedIds))
   const u = str(s.config.users ?? DEFAULT_CONFIG.users).split(',').map((x) => x.trim()).filter(Boolean)
   return {
-    feeds, litter, weights, meds, issues,
+    feeds, litter, weights, meds, issues, cares,
     foods: t.Foods.map(decodeFood).filter((f) => f.food_id),
     config: decodeConfig(s.config, now),
     rawConfig: s.config,
     users: [u[0] ?? 'Brian', u[1] ?? 'Mia'],
     intervalsAreSample: bool(s.config.intervals_are_sample ?? DEFAULT_CONFIG.intervals_are_sample),
+    version: apiVersion(s.version),
     all: [
       ...feeds.map((e) => ({ type: 'feed' as const, ...e })), ...litter.map((e) => ({ type: 'litter' as const, ...e })),
       ...weights.map((e) => ({ type: 'weight' as const, ...e })), ...meds.map((e) => ({ type: 'med' as const, ...e })),
-      ...issues.map((e) => ({ type: 'issue' as const, ...e })),
+      ...issues.map((e) => ({ type: 'issue' as const, ...e })), ...cares.map((e) => ({ type: 'care' as const, ...e })),
     ],
   }
 }

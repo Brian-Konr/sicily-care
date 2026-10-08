@@ -1,6 +1,6 @@
 # 西西里共同照護紀錄（sicily-care）
 
-Brian 和 Mia 兩個人一起養貓咪西西里（小步舞曲，母）。這個 PWA 讓兩人在手機上一鍵記錄副食／零食、清砂、體重、驅蟲疫苗用藥和異常回報（可附照片），並看到首頁狀態和 7 天時間軸，避免重複餵零食、漏掉驅蟲。
+Brian 和 Mia 兩個人一起養貓咪西西里（小步舞曲，母）。這個 PWA 讓兩人在手機上一鍵記錄副食／零食、清砂、體重、驅蟲疫苗用藥、異常回報（可附照片）和居家維護，並看到首頁狀態；紀錄頁可以往回翻更早的資料（首頁讀取仍是近 7 天）。
 
 線上版：https://brian-konr.github.io/sicily-care/
 
@@ -118,6 +118,7 @@ python3 scripts/screenshots.py http://localhost:4173/   # 存到 screens/（不�
 | `Weight` 體重 | `kg`, `method`, `note` |
 | `Med` 驅蟲／疫苗／用藥 | `kind`, `product`, `dose`, `next_due`, `note` |
 | `Issue` 異常回報 | `category`, `sub`, `severity`, `photo_ids`, `photo_urls`, `note`, `resolved` |
+| `Care` 居家維護 | `kind`, `note` |
 
 | 分頁 | 欄位 |
 |---|---|
@@ -126,7 +127,7 @@ python3 scripts/screenshots.py http://localhost:4173/   # 存到 screens/（不�
 
 選項一律存繁體中文文字（例如 `喜歡`、`蹲很久/用力`、`寵物秤`），人直接讀得懂；多選欄位用逗號分隔，空值存空白。
 
-`Config` 的 key：`users`、`litter_clumping`、`birthday_est`、`birthday_estimated`（使用者在設定頁存過生日才會出現）、`clinic_name`、`clinic_phone`、`clinic_24h`、`weight_interval_days`、`weight_interval_days_adult`、`deworm_int_days`、`ext_deworm_int_days`、`combo_deworm_int_days`、`fvrcp_int_days`、`rabies_int_days`、`intervals_are_sample`、`dup_snack_window_min`。預設值在 `gas/Schema.gs` 和 `src/data/defaults.ts`（兩邊必須一致，測試會比對）。
+`Config` 的 key：`users`、`litter_clumping`、`birthday_est`、`birthday_estimated`（使用者在設定頁存過生日才會出現）、`clinic_name`、`clinic_phone`、`clinic_24h`、`weight_interval_days`、`weight_interval_days_adult`、`deworm_int_days`、`ext_deworm_int_days`、`combo_deworm_int_days`、`fvrcp_int_days`、`rabies_int_days`、`intervals_are_sample`、`dup_snack_window_min`、`litter_wash_int_days`、`feeder_clean_int_days`、`desiccant_int_days`。預設值在 `gas/Schema.gs` 和 `src/data/defaults.ts`（兩邊必須一致，測試會比對）。
 
 ## API
 
@@ -134,13 +135,15 @@ python3 scripts/screenshots.py http://localhost:4173/   # 存到 screens/（不�
 
 | action | 參數 | 說明 |
 |---|---|---|
-| `read` | `days` | Feed、Litter 回近 N 天（預設 7），Weight、Med、Foods、Config 全回，未解決的 Issue 一律帶回；含已撤銷的列 |
+| `read` | `days` | `version: 2`。Feed、Litter、Issue 回近 N 天（預設 7），Weight、Med、Care 全回，Foods、Config 全回，未解決的 Issue 一律帶回；含已撤銷的列 |
 | `append` | `table`, `record` | 新增一筆；`id` 由前端產生，重複的 `id` 視為成功（重送安全） |
 | `update` | `table`, `id`, `patch` | 修改欄位（可改時間，不能改 `id`、`who`） |
 | `softDelete` | `table`, `id` | 撤銷（`deleted=TRUE`） |
 | `setConfig` | `key`, `value` | 設定頁存檔 |
 | `upsertFood` | `record` | 依 `food_id` 新增或修改食物 |
 | `uploadPhoto` | `data`（base64）, `mime`, `filename` | 存進照片資料夾，回傳 `fileId`、`url` |
+| `history` | `before`, `days`, `tables?` | 往回翻紀錄。半開視窗 `[before-days×86400000, before)`，預設 30 天、上限 90。回 `tables`、`from`、`before`、`hasMore`。不進待送佇列 |
+| `getPhoto` | `fileId` | 讀照片資料夾裡的檔，回 `mime` 與 base64 `data`。資料夾外或找不到是 `forbidden`。不進待送佇列 |
 
 ## 文件
 

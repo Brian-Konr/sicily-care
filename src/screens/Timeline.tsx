@@ -1,57 +1,95 @@
-import { useState } from "react"
-import type { AnyEntry, EntryType, NetworkState } from "@/types"
+import { useLayoutEffect, useRef, useState, type Ref, type UIEventHandler } from "react"
+import type { AnyEntry, NetworkState } from "@/types"
 import { BottomNav } from "@/components/BottomNav"
-import { ChoiceSingle } from "@/components/ChoiceGroup"
+import { DayHeader } from "@/components/DayHeader"
 import { EditEntrySheet, type EntryPatch } from "@/components/EditEntrySheet"
+import { FilterChips } from "@/components/FilterChips"
+import { ListEndState, type ListEndKind } from "@/components/ListEndState"
 import { NetworkBanner } from "@/components/NetworkBanner"
 import { ScreenLayout } from "@/components/ScreenLayout"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Button } from "@/components/ui/button"
 import { TimelineItem, TimelineList } from "@/components/TimelineItem"
-import { fmtDayLabel } from "@/lib/format"
-import { timelineItems } from "@/lib/rules"
+import { dateKey, fmtDate } from "@/lib/format"
+import { matchesFilter, type TimelineFilter } from "@/lib/history"
 
 export interface TimelineScreenProps {
   now: Date
   network: NetworkState
   queuedCount: number
   failedCount: number
-  /** 所有類型的紀錄（含 deleted=TRUE），畫面自己篩 7 天 */
   entries: AnyEntry[]
+  loading: boolean
+  filters: TimelineFilter[]
+  onFilters: (v: TimelineFilter[]) => void
+  from: string
+  end: ListEndKind
+  mainRef?: Ref<HTMLElement>
+  onMainScroll?: UIEventHandler<HTMLElement>
+  scrollTop: number
   onHome: () => void
-  /** 撤銷＝軟刪除（deleted=TRUE），不刪列 */
   onUndo: (e: AnyEntry) => void
   onRestore: (e: AnyEntry) => void
   onEdit: (id: string, patch: EntryPatch) => void
   onRetrySync: () => void
 }
 
-const FILTERS = ["全部", "餵食", "清砂", "體重", "用藥", "異常"] as const
-type Filter = (typeof FILTERS)[number]
-const FILTER_TYPE: Record<Exclude<Filter, "全部">, EntryType> = { "餵食": "feed", "清砂": "litter", "體重": "weight", "用藥": "med", "異常": "issue" }
-
 export function TimelineScreen(p: TimelineScreenProps) {
-  const [filter, setFilter] = useState<Filter>("全部")
   const [editing, setEditing] = useState<AnyEntry | null>(null)
+  const restoreRef = useRef<HTMLElement | null>(null)
 
-  const items = timelineItems(p.entries, p.now).filter((e) => filter === "全部" || e.type === FILTER_TYPE[filter])
-  const groups: { label: string; items: AnyEntry[] }[] = []
-  for (const e of items) {
-    const label = fmtDayLabel(e.ts, p.now)
-    const g = groups.find((x) => x.label === label)
-    if (g) g.items.push(e)
-    else groups.push({ label, items: [e] })
+  useLayoutEffect(() => {
+    const el = restoreRef.current
+    if (el) el.scrollTop = p.scrollTop
+  }, [])
+
+  const setMainRef = (node: HTMLElement | null) => {
+    restoreRef.current = node
+    const r = p.mainRef
+    if (typeof r === "function") r(node)
+    else if (r) (r as { current: HTMLElement | null }).current = node
   }
 
+  const items = [...p.entries].filter((e) => matchesFilter(e.type, p.filters))
+    .sort((a, b) => Date.parse(b.ts) - Date.parse(a.ts))
+  const groups: { key: string; items: AnyEntry[] }[] = []
+  for (const e of items) {
+    const key = dateKey(e.ts)
+    const g = groups.find((x) => x.key === key)
+    if (g) g.items.push(e)
+    else groups.push({ key, items: [e] })
+  }
+
+  const emptyAll = p.filters.length === 0 && items.length === 0 && !p.loading
+  const emptyFilter = p.filters.length > 0 && items.length === 0 && !p.loading
+
   return (
-    <ScreenLayout title="7 天紀錄"
+    <ScreenLayout title="紀錄" mainRef={setMainRef} onMainScroll={p.onMainScroll}
+      toolbar={<FilterChips filters={p.filters} onChange={p.onFilters} />}
       banner={<NetworkBanner network={p.network} queuedCount={p.queuedCount} failedCount={p.failedCount} onRetry={p.onRetrySync} />}
       bottom={<BottomNav current="timeline" onNavigate={(to) => { if (to === "home") p.onHome() }} />}>
       <div className="pt-1">
-        <ChoiceSingle label="篩選" hideLabel options={FILTERS} value={filter} onChange={(v) => setFilter(v ?? "全部")} className="gap-2" />
-        <p className="mt-3 text-muted-foreground">點「撤銷」會劃掉，不會真的刪除，隨時可以復原。</p>
-        {groups.length === 0 && <p className="py-10 text-center text-muted-foreground">這 7 天沒有{filter === "全部" ? "" : filter}紀錄。</p>}
+        <p className="text-muted-foreground">點「撤銷」會劃掉，不會真的刪除，隨時可以復原。</p>
+        {p.loading && (
+          <div className="grid gap-2 pt-4" aria-busy="true">
+            <Skeleton className="h-16 rounded-lg" />
+            <Skeleton className="h-16 rounded-lg" />
+            <Skeleton className="h-16 rounded-lg" />
+            <Skeleton className="h-16 rounded-lg" />
+            <Skeleton className="h-16 rounded-lg" />
+            <p className="text-center text-muted-foreground">正在讀取最新紀錄⋯</p>
+          </div>
+        )}
+        {emptyAll && <p className="py-10 text-center text-muted-foreground">還沒有紀錄。</p>}
+        {emptyFilter && (
+          <div className="grid justify-items-center gap-2 py-10">
+            <p className="text-center text-muted-foreground">{fmtDate(p.from)}以來沒有「{p.filters.join("、")}」紀錄。</p>
+            <Button variant="ghost" size="sm" onClick={() => p.onFilters([])}>看全部類型</Button>
+          </div>
+        )}
         {groups.map((g) => (
-          <section key={g.label} aria-label={g.label}>
-            <h2 className="mt-5 mb-2 font-bold text-muted-foreground">{g.label}</h2>
+          <section key={g.key} aria-label={g.key}>
+            <DayHeader iso={g.items[0].ts} now={p.now} />
             <TimelineList>
               {g.items.map((e) => (
                 <TimelineItem key={e.id} entry={e} actions onUndo={p.onUndo} onRestore={p.onRestore} onEdit={setEditing} />
@@ -59,8 +97,10 @@ export function TimelineScreen(p: TimelineScreenProps) {
             </TimelineList>
           </section>
         ))}
+        <ListEndState {...p.end} />
       </div>
-      <EditEntrySheet entry={editing} onClose={() => setEditing(null)} onSave={(id, patch) => { p.onEdit(id, patch); setEditing(null) }} />
+      <EditEntrySheet entry={editing} onClose={() => setEditing(null)} onSave={(id, patch) => { p.onEdit(id, patch); setEditing(null) }}
+        maxDate={dateKey(p.now)} />
     </ScreenLayout>
   )
 }

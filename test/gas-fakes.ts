@@ -65,14 +65,28 @@ export function loadGas(opts: { lockBusy?: boolean } = {}) {
       getFolderById: (id: string) => ({
         addViewer: (e: string) => shares.push(id + '-viewer:' + e),
         createFile: (blob: { bytes: number[]; mime: string; name: string }) => {
-          const f = { id: 'file-' + (files.length + 1), folder: id, ...blob }
+          const f = { id: 'file-' + (files.length + 1), name: blob.name, mime: blob.mime, bytes: blob.bytes, folder: id }
           files.push(f)
           return { getId: () => f.id, getUrl: () => 'https://drive.google.com/file/d/' + f.id + '/view' }
         },
       }),
+      getFileById: (id: string) => {
+        const f = files.find((x) => x.id === id)
+        if (!f) throw new Error('File not found: ' + id)
+        let parentTaken = false
+        return {
+          getId: () => f.id,
+          getParents: () => ({
+            hasNext: () => !parentTaken,
+            next: () => { parentTaken = true; return { getId: () => f.folder } },
+          }),
+          getBlob: () => ({ getContentType: () => f.mime, getBytes: () => f.bytes }),
+        }
+      },
     },
     Utilities: {
       base64Decode: (s: string) => [...Buffer.from(s, 'base64')],
+      base64Encode: (bytes: number[] | Uint8Array) => Buffer.from(bytes).toString('base64'),
       newBlob: (bytes: number[], mime: string, name: string) => ({ bytes, mime, name }),
       getUuid: () => '00000000-0000-4000-8000-' + String(++uuid).padStart(12, '0'),
       formatDate: (d: Date) => {

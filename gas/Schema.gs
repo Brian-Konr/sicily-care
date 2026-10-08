@@ -11,16 +11,19 @@ var SCHEMA = {
   Weight: COMMON_COLS.concat(['kg', 'method', 'note']),
   Med:    COMMON_COLS.concat(['kind', 'product', 'dose', 'next_due', 'note']),
   Issue:  COMMON_COLS.concat(['category', 'sub', 'severity', 'photo_ids', 'photo_urls', 'note', 'resolved']),
+  Care:   COMMON_COLS.concat(['kind', 'note']),
   Foods:  ['food_id', 'name', 'brand', 'kind', 'unit', 'default_qty', 'grams_per_unit', 'fav', 'active'],
   Config: ['key', 'value']
 };
 
 /** 紀錄類分頁（有 id/ts/who/deleted，可新增、編輯、軟刪除） */
-var LOG_TABLES = ['Feed', 'Litter', 'Weight', 'Med', 'Issue'];
-/** 只讀近 N 天的分頁；其他紀錄分頁（Weight、Med）量少，全部回傳 */
+var LOG_TABLES = ['Feed', 'Litter', 'Weight', 'Med', 'Issue', 'Care'];
+/** 只讀近 N 天的分頁；其他紀錄分頁（Weight、Med、Care）量少，全部回傳 */
 var WINDOWED_TABLES = ['Feed', 'Litter', 'Issue'];
 /** 各分頁的主鍵欄位 */
-var KEY_COL = { Feed: 'id', Litter: 'id', Weight: 'id', Med: 'id', Issue: 'id', Foods: 'food_id', Config: 'key' };
+var KEY_COL = { Feed: 'id', Litter: 'id', Weight: 'id', Med: 'id', Issue: 'id', Care: 'id', Foods: 'food_id', Config: 'key' };
+/** Care.kind 只允許這三個字串 */
+var CARE_KINDS = ['litter_wash', 'feeder_clean', 'feeder_desiccant'];
 
 /** Config 預設值（與前端 src/data/defaults.ts 相同，測試會比對）。間隔是示意值，可在 App 設定頁改。 */
 var DEFAULT_CONFIG = [
@@ -38,7 +41,10 @@ var DEFAULT_CONFIG = [
   ['fvrcp_int_days', '365'],             // 三合一疫苗
   ['rabies_int_days', '365'],            // 狂犬病疫苗
   ['intervals_are_sample', 'TRUE'],      // 間隔仍是示意值；在設定頁改過就變 FALSE
-  ['dup_snack_window_min', '120']
+  ['dup_snack_window_min', '120'],
+  ['litter_wash_int_days', '30'],
+  ['feeder_clean_int_days', '30'],
+  ['desiccant_int_days', '30']
 ];
 
 /** Foods 預設清單（Foods 分頁是空的才寫入）。乾糧皇家 K36 由餵食機自動出糧，不記錄。 */

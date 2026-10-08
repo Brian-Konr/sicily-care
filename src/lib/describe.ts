@@ -1,5 +1,6 @@
 /** 純函式：把一筆紀錄轉成列表文字（時間軸、首頁最近紀錄共用）。 */
 import type { AnyEntry, EntryType } from "@/types"
+import { careLabel } from "@/lib/care"
 import { eatenLabel } from "@/lib/rules"
 
 export const TYPE_META: Record<EntryType, { emoji: string; label: string }> = {
@@ -8,6 +9,7 @@ export const TYPE_META: Record<EntryType, { emoji: string; label: string }> = {
   weight: { emoji: "⚖️", label: "體重" },
   med: { emoji: "💊", label: "驅蟲／疫苗／用藥" },
   issue: { emoji: "📷", label: "異常回報" },
+  care: { emoji: "🧽", label: "居家維護" },
 }
 
 export type Tone = "ok" | "watch" | "urgent" | "info" | "pending" | "muted"
@@ -46,5 +48,7 @@ export function describe(e: AnyEntry): Described {
         badge: e.resolved ? { tone: "ok", label: "已解決" }
           : { tone: e.severity === "緊急" ? "urgent" : e.severity === "要注意" ? "watch" : "info", label: e.severity },
       }
+    case "care":
+      return { emoji, title: careLabel(e.kind), detail: e.note || undefined }
   }
 }

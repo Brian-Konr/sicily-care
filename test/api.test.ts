@@ -193,3 +193,48 @@ test('Apps Script 介面卡：預設等 55 秒；逾時丟 NetworkError(kind=tim
   const def = createGasAdapter({ url: 'https://x/exec', secret: 'k', fetchImpl: async (u, init) => { signal = init.signal; return { ok: true, json: async () => ({ ok: true }) }; } });
   await def.call({ action: 'read' });
 });
+
+test('history 半開視窗；getPhoto 讀得到上傳的檔；兩者都不進佇列', async () => {
+  const { api, mock } = setup();
+  await api.load();
+  const before = '2026-10-09T00:00:00+08:00';
+  const from = '2026-09-09T00:00:00+08:00';
+  await mock.call({ action: 'append', table: 'Care', record: { id: 'in', ts: from, who: 'Brian', kind: 'litter_wash', note: '', deleted: false } });
+  await mock.call({ action: 'append', table: 'Care', record: { id: 'edge', ts: before, who: 'Brian', kind: 'feeder_clean', note: '', deleted: false } });
+  const pendingBefore = api.status().pending;
+  const page = await api.history({ before, days: 30 });
+  assert.equal(api.status().pending, pendingBefore);
+  assert.equal(page.from, from);
+  assert.ok(page.tables.Care?.some((r) => r.id === 'in'));
+  assert.ok(!page.tables.Care?.some((r) => r.id === 'edge'));
+
+  const up = await mock.call({ action: 'uploadPhoto', data: 'YWJj', mime: 'image/jpeg', filename: 'a.jpg' });
+  const photo = await api.getPhoto(up.fileId);
+  assert.equal(api.status().pending, pendingBefore);
+  assert.equal(photo.mime, 'image/jpeg');
+  assert.equal(photo.data, 'YWJj');
+  const forbidden = await mock.call({ action: 'getPhoto', fileId: 'nope' });
+  assert.equal(forbidden.error, 'forbidden');
+});
+
+test('upsertFood 只送 food_id 與 active:false 時不會把名稱洗掉', async () => {
+  const { api } = setup();
+  await api.load();
+  const name = api.peek().tables.Foods.find((f) => f.food_id === 'hf-mackerel').name;
+  await api.upsertFood({ food_id: 'hf-mackerel', active: false });
+  const row = api.peek().tables.Foods.find((f) => f.food_id === 'hf-mackerel');
+  assert.equal(row.name, name);
+  assert.equal(row.active, false);
+});
+
+test('舊的 mock db 沒有 Care 陣列時 read 仍成功', async () => {
+  const storage = memoryStorage();
+  storage.setItem('sicily.mockdb', JSON.stringify({
+    Foods: [], Config: { users: 'Brian,Mia' }, Feed: [], Litter: [], Weight: [], Med: [], Issue: [],
+  }));
+  const mock = createMockAdapter({ storage, now: () => NOW });
+  const api = createApi({ adapter: mock, storage, who: 'Brian', now: () => NOW });
+  const d = await api.load();
+  assert.ok(Array.isArray(d.tables.Care));
+  assert.equal(d.tables.Care.length, 0);
+});

@@ -31,6 +31,9 @@ export const DEFAULT_CONFIG: Record<string, Cell> = {
   rabies_int_days: 365,
   intervals_are_sample: true,
   dup_snack_window_min: 120,
+  litter_wash_int_days: 30,
+  feeder_clean_int_days: 30,
+  desiccant_int_days: 30,
 }
 
 /** Foods 預設清單：品牌名稱照使用者提供的寫；乾糧（皇家 K36，餵食機自動出糧）不記錄 */

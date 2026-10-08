@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react"
+import { useState, type ReactNode } from "react"
 import { Eye, EyeOff, LoaderCircle, RotateCw, SquarePlus, Share, TriangleAlert, WifiOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { BottomActionBar, ScreenLayout } from "@/components/ScreenLayout"
+import { WaitHint } from "@/components/WaitHint"
 import { cn } from "@/lib/utils"
 
 export interface OnboardingScreenProps {
@@ -35,8 +36,6 @@ export function OnboardingScreen(p: OnboardingScreenProps) {
   const busy = p.status === "checking"
   const can = !!who && (!needSecret || secret.trim().length > 0) && !busy
   const submit = () => who && p.onSubmit({ who, secret: needSecret ? secret : "" })
-  const waited = useWaitSeconds(busy)
-  const waitNote = waited >= 20 ? "還在連線，請不要關掉 App" : waited >= 5 ? "第一次連線 Google 比較慢，最多約半分鐘" : ""
 
   return (
     <ScreenLayout title="第一次使用"
@@ -44,7 +43,7 @@ export function OnboardingScreen(p: OnboardingScreenProps) {
         <Button size="lg" className="w-full" disabled={!can} onClick={submit}>
           {busy ? <><LoaderCircle className="animate-spin" aria-hidden />確認中⋯</> : "開始使用"}
         </Button>
-        <p aria-live="polite" className="mt-2 text-center text-sm text-muted-foreground empty:hidden">{waitNote}</p>
+        <WaitHint busy={busy} hint5="第一次連線 Google 比較慢，最多約半分鐘" hint20="還在連線，請不要關掉 App" />
       </BottomActionBar>}>
       <div className="space-y-6 pt-2">
         <div>
@@ -114,16 +113,4 @@ export function OnboardingScreen(p: OnboardingScreenProps) {
       </div>
     </ScreenLayout>
   )
-}
-
-/** 長等待要說明（DESIGN.md）：busy 期間每秒累計，結束歸零 */
-function useWaitSeconds(busy: boolean) {
-  const [sec, setSec] = useState(0)
-  useEffect(() => {
-    if (!busy) { setSec(0); return }
-    const t0 = Date.now()
-    const id = setInterval(() => setSec(Math.floor((Date.now() - t0) / 1000)), 1000)
-    return () => clearInterval(id)
-  }, [busy])
-  return sec
 }

@@ -110,6 +110,14 @@ export interface IssueEntry extends BaseEntry {
   resolved: boolean
 }
 
+/* ── Care 分頁（居家維護） ── */
+export type CareKind = "litter_wash" | "feeder_clean" | "feeder_desiccant"
+
+export interface CareEntry extends BaseEntry {
+  kind: CareKind
+  note: string
+}
+
 /* ── Config 分頁（key/value，前端讀成型別化物件） ── */
 export interface Config {
   /** 西西里的生日（YYYY-MM-DD）。欄位名沿用舊名 birthday_est（Sheet 的 key），不代表一定是估計值 */
@@ -130,6 +138,9 @@ export interface Config {
   med_interval_days: Partial<Record<MedKind, number>>
   /** 保留欄位：目前用凝結砂（pidan 三合一），UI 不分支 */
   litter_clumping: boolean
+  litter_wash_int_days: number
+  feeder_clean_int_days: number
+  desiccant_int_days: number
 }
 
 /* ── 前端用的組合型別 ── */
@@ -139,6 +150,7 @@ export type AnyEntry =
   | ({ type: "weight" } & WeightEntry)
   | ({ type: "med" } & MedEntry)
   | ({ type: "issue" } & IssueEntry)
+  | ({ type: "care" } & CareEntry)
 
 export type EntryType = AnyEntry["type"]
 
@@ -150,10 +162,10 @@ export interface PhotoDraft {
   label: string
 }
 
-export type ScreenId = "home" | "feed" | "litter" | "weight" | "med" | "issue" | "timeline" | "onboarding" | "settings"
+export type ScreenId = "home" | "feed" | "litter" | "weight" | "med" | "issue" | "timeline" | "onboarding" | "settings" | "foods"
 
 /** 設定頁可編輯的欄位（Config 的子集） */
-export type SettingsValues = Pick<Config, "birthday_est" | "birthday_estimated" | "clinic_name" | "clinic_phone" | "clinic_24h" | "med_interval_days">
+export type SettingsValues = Pick<Config, "birthday_est" | "birthday_estimated" | "clinic_name" | "clinic_phone" | "clinic_24h" | "med_interval_days" | "litter_wash_int_days" | "feeder_clean_int_days" | "desiccant_int_days">
 
 /** 傳給畫面的診所資訊；沒有電話時為 undefined */
 export interface ClinicInfo {

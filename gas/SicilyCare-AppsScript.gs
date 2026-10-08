@@ -12,16 +12,19 @@ var SCHEMA = {
   Weight: COMMON_COLS.concat(['kg', 'method', 'note']),
   Med:    COMMON_COLS.concat(['kind', 'product', 'dose', 'next_due', 'note']),
   Issue:  COMMON_COLS.concat(['category', 'sub', 'severity', 'photo_ids', 'photo_urls', 'note', 'resolved']),
+  Care:   COMMON_COLS.concat(['kind', 'note']),
   Foods:  ['food_id', 'name', 'brand', 'kind', 'unit', 'default_qty', 'grams_per_unit', 'fav', 'active'],
   Config: ['key', 'value']
 };
 
 /** 紀錄類分頁（有 id/ts/who/deleted，可新增、編輯、軟刪除） */
-var LOG_TABLES = ['Feed', 'Litter', 'Weight', 'Med', 'Issue'];
-/** 只讀近 N 天的分頁；其他紀錄分頁（Weight、Med）量少，全部回傳 */
+var LOG_TABLES = ['Feed', 'Litter', 'Weight', 'Med', 'Issue', 'Care'];
+/** 只讀近 N 天的分頁；其他紀錄分頁（Weight、Med、Care）量少，全部回傳 */
 var WINDOWED_TABLES = ['Feed', 'Litter', 'Issue'];
 /** 各分頁的主鍵欄位 */
-var KEY_COL = { Feed: 'id', Litter: 'id', Weight: 'id', Med: 'id', Issue: 'id', Foods: 'food_id', Config: 'key' };
+var KEY_COL = { Feed: 'id', Litter: 'id', Weight: 'id', Med: 'id', Issue: 'id', Care: 'id', Foods: 'food_id', Config: 'key' };
+/** Care.kind 只允許這三個字串 */
+var CARE_KINDS = ['litter_wash', 'feeder_clean', 'feeder_desiccant'];
 
 /** Config 預設值（與前端 src/data/defaults.ts 相同，測試會比對）。間隔是示意值，可在 App 設定頁改。 */
 var DEFAULT_CONFIG = [
@@ -39,7 +42,10 @@ var DEFAULT_CONFIG = [
   ['fvrcp_int_days', '365'],             // 三合一疫苗
   ['rabies_int_days', '365'],            // 狂犬病疫苗
   ['intervals_are_sample', 'TRUE'],      // 間隔仍是示意值；在設定頁改過就變 FALSE
-  ['dup_snack_window_min', '120']
+  ['dup_snack_window_min', '120'],
+  ['litter_wash_int_days', '30'],
+  ['feeder_clean_int_days', '30'],
+  ['desiccant_int_days', '30']
 ];
 
 /** Foods 預設清單（Foods 分頁是空的才寫入）。乾糧皇家 K36 由餵食機自動出糧，不記錄。 */
@@ -58,7 +64,7 @@ var INITIAL_WEIGHT = {
 // ===== Setup.gs =====
 /**
  * 一次性初始化：在「綁定在試算表上的 Apps Script」裡執行 setupSicilyCare()。
- * - 建立 7 個分頁與表頭（已存在就只補缺少的欄位，不會清資料）
+ * - 建立 8 個分頁與表頭（已存在就只補缺少的欄位，不會清資料）
  * - 寫入 Config 預設值（已存在的 key 不覆蓋）
  * - Foods、Weight 是空的才寫入初始資料（3 種食物、第一筆體重 3.5 kg）
  * - 建立 Drive 照片資料夾「西西里照片」並記下 ID
@@ -128,7 +134,7 @@ function ensureSheet_(ss, name, cols) {
 
 // ===== Code.gs =====
 /**
- * 西西里共同照護紀錄：Apps Script Web App 後端（v1）
+ * 西西里共同照護紀錄：Apps Script Web App 後端（v2）
  *
  * 部署：以「我」的身分執行、任何人可存取；網址公開，所以每個請求都要帶共享密鑰。
  * 密鑰存在 Script Properties 的 SHARED_SECRET（由 Setup.gs 產生），程式碼裡不放。
@@ -143,8 +149,12 @@ function ensureSheet_(ss, name, cols) {
  *   uploadPhoto { filename, mime, data(base64) }   存到照片資料夾，回傳 fileId
  *   setConfig   { key, value }                     改 Config
  *   upsertFood  { record }                         新增或修改 Foods
+ *   history     { before, days?, tables? }         讀 before 之前的一頁（預設 30 天，最多 90）
+ *   getPhoto    { fileId }                         讀照片資料夾裡的檔，回傳 mime 與 base64
  * 回應：{ ok: true, ... } 或 { ok: false, error: '代碼', message }
  */
+
+var API_VERSION = 2;
 
 var LOCK_WAIT_MS = 10000;
 var MAX_PHOTO_BYTES = 10 * 1024 * 1024; // 前端壓縮後約 0.3 MB，這裡給 10 MB 當防呆上限
@@ -156,7 +166,7 @@ function doPost(e) {
 /** GET 只做健康檢查與（必要時）讀取。前端請用 POST read，避免密鑰出現在網址與瀏覽紀錄。 */
 function doGet(e) {
   var p = (e && e.parameter) || {};
-  if (!p.secret) return respond_({ ok: true, service: 'sicily-care', version: 1 });
+  if (!p.secret) return respond_({ ok: true, service: 'sicily-care', version: 2 });
   return respond_(handle_({ secret: p.secret, action: 'read', days: p.days }));
 }
 
@@ -180,6 +190,8 @@ function handle_(req) {
       case 'setConfig':   return withLock_(function () { return upsert_('Config', { key: req.key, value: req.value }); });
       case 'upsertFood':  return withLock_(function () { return upsert_('Foods', req.record); });
       case 'uploadPhoto': return uploadPhoto_(req);
+      case 'history':     return history_(req);
+      case 'getPhoto':    return getPhoto_(req);
       default:            return fail_('bad_action', '未知的 action：' + req.action);
     }
   } catch (err) {
@@ -277,6 +289,8 @@ function findRow_(table, keyValue) {
 function append_(table, record) {
   if (LOG_TABLES.indexOf(table) < 0) return fail_('bad_table', '這個分頁不能用 append：' + table);
   if (!record || !record.id || !record.ts || !record.who) return fail_('bad_record', '缺少 id、ts 或 who');
+  var careErr = checkCareKind_(table, record, true);
+  if (careErr) return careErr;
   var existing = findRow_(table, record.id);
   if (existing) return { ok: true, duplicate: true, record: strip_(existing) }; // 離線重送：已寫過就當成功
   var sh = sheet_(table);
@@ -287,6 +301,8 @@ function append_(table, record) {
 
 function update_(table, id, patch) {
   if (LOG_TABLES.indexOf(table) < 0) return fail_('bad_table', '這個分頁不能用 update：' + table);
+  var careErr = checkCareKind_(table, patch || {}, false);
+  if (careErr) return careErr;
   var existing = findRow_(table, id);
   if (!existing) return fail_('not_found', '找不到這筆紀錄：' + id);
   var sh = sheet_(table);
@@ -318,7 +334,7 @@ function upsert_(table, record) {
 function readAll_(days) {
   var n = Math.min(Math.max(parseInt(days, 10) || 7, 1), 90);
   var since = Date.now() - n * 24 * 3600 * 1000;
-  var out = { ok: true, days: n, serverTime: normalizeCell_(new Date()), tables: {}, config: readConfig_() };
+  var out = { ok: true, version: API_VERSION, days: n, serverTime: normalizeCell_(new Date()), tables: {}, config: readConfig_() };
   LOG_TABLES.forEach(function (t) {
     out.tables[t] = rows_(t).filter(function (r) {
       // 已撤銷的也帶回（deleted=TRUE），前端時間軸要顯示「已撤銷＋復原」
@@ -357,4 +373,66 @@ function uploadPhoto_(req) {
   var name = String(req.filename || ('sicily-' + Date.now() + '.jpg')).replace(/[\\/:*?"<>|]/g, '_');
   var file = DriveApp.getFolderById(folderId).createFile(Utilities.newBlob(bytes, mime, name));
   return { ok: true, fileId: file.getId(), url: file.getUrl() };
+}
+
+function checkCareKind_(table, rec, required) {
+  if (table !== 'Care') return null;
+  var kind = rec && rec.kind;
+  if (kind === undefined || kind === null || kind === '') {
+    return required ? fail_('bad_record', '缺少 kind') : null;
+  }
+  if (CARE_KINDS.indexOf(kind) < 0) return fail_('bad_record', 'kind 只能是指定的居家維護項目');
+  return null;
+}
+
+function history_(req) {
+  var beforeMs = Date.parse(req.before);
+  if (!isFinite(beforeMs)) return fail_('bad_record', '缺少有效的 before');
+  var days = Math.min(90, Math.max(1, parseInt(req.days, 10) || 30));
+  var fromMs = beforeMs - days * 86400000;
+  var names = req.tables;
+  if (names === undefined || (Array.isArray(names) && names.length === 0)) names = LOG_TABLES.slice();
+  else if (!Array.isArray(names)) return fail_('bad_record', 'tables 格式不對');
+  var i;
+  for (i = 0; i < names.length; i++) {
+    if (LOG_TABLES.indexOf(names[i]) < 0) return fail_('bad_table', '這個分頁不能用 history：' + names[i]);
+  }
+  var tables = {};
+  var hasMore = false;
+  names.forEach(function (t) {
+    tables[t] = rows_(t).filter(function (r) {
+      var ts = Date.parse(r.ts);
+      if (!isFinite(ts)) return false;
+      if (ts < fromMs) { hasMore = true; return false; }
+      return ts < beforeMs;
+    }).map(strip_);
+  });
+  return {
+    ok: true,
+    version: API_VERSION,
+    tables: tables,
+    from: normalizeCell_(new Date(fromMs)),
+    before: normalizeCell_(new Date(beforeMs)),
+    hasMore: hasMore
+  };
+}
+
+function getPhoto_(req) {
+  var fileId = req.fileId;
+  if (!fileId) return fail_('bad_record', '缺少照片');
+  var folderId = PropertiesService.getScriptProperties().getProperty('PHOTO_FOLDER_ID');
+  if (!folderId) return fail_('no_folder', '尚未設定照片資料夾，請先執行 setupSicilyCare()');
+  try {
+    var file = DriveApp.getFileById(fileId);
+    var parents = file.getParents();
+    var inFolder = false;
+    while (parents.hasNext()) {
+      if (parents.next().getId() === folderId) { inFolder = true; break; }
+    }
+    if (!inFolder) return { ok: false, error: 'forbidden', message: '讀不到這張照片' };
+    var blob = file.getBlob();
+    return { ok: true, mime: blob.getContentType(), data: Utilities.base64Encode(blob.getBytes()) };
+  } catch (err) {
+    return { ok: false, error: 'forbidden', message: '讀不到這張照片' };
+  }
 }

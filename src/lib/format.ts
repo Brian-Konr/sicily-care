@@ -51,6 +51,17 @@ export function fmtDayLabel(iso: string | Date, now: Date): string {
   return fmtDate(iso)
 }
 
+/** 紀錄頁日期標題：今天／昨天／9 月 24 日（四）／2025 年 12 月 31 日（三） */
+export function fmtDayHeader(iso: string | Date, now: Date): string {
+  const d = dayDiff(iso, now)
+  if (d === 0) return "今天"
+  if (d === 1) return "昨天"
+  const p = parts(new Date(iso))
+  const md = `${Number(p.m)} 月 ${Number(p.d)} 日（${WEEK[p.wd]}）`
+  if (p.y === parts(now).y) return md
+  return `${p.y} 年 ${md}`
+}
+
 /** 剛剛／30 分鐘前／3 小時前／12 天前 */
 export function relTime(iso: string | Date, now: Date): string {
   const min = Math.floor((now.getTime() - new Date(iso).getTime()) / 60_000)
