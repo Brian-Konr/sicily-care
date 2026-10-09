@@ -94,7 +94,7 @@ export function MedScreen(p: MedScreenProps) {
                 <li key={u.entry.id} className="flex items-center gap-3 py-2 pr-2 pl-4">
                   <span className="min-w-0 flex-1">
                     <span className="block font-medium">{u.entry.kind}</span>
-                    <span className="block text-muted-foreground">下次 {fmtDate(d2(u.next_due))}・<DueStatus daysLeft={u.daysLeft} /></span>
+                    <span className="block text-muted-foreground">下次 {fmtDate(d2(u.next_due))} <DueStatus daysLeft={u.daysLeft} /></span>
                   </span>
                   <Button variant="outline" size="sm" onClick={() => p.onGiveAgain(u.entry)} aria-label={`已給 ${u.entry.product}`}>
                     <Check aria-hidden />已給

@@ -137,7 +137,7 @@ export function PhotoViewer({
           <DialogTitle className="sr-only">{title}的照片</DialogTitle>
           <div className="flex h-14 items-center px-2 pt-[var(--safe-top)]">
             <Button variant="secondary" size="sm" onClick={onClose}><X aria-hidden />關閉</Button>
-            {many && <span className="ml-auto font-num" aria-live="polite">{index + 1}／{photos.length}</span>}
+            {many && <span className="ml-auto px-2 font-num text-foreground" aria-live="polite">{index + 1}／{photos.length}</span>}
           </div>
           <div ref={region} className="relative min-h-0 flex-1 touch-none select-none"
             onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
