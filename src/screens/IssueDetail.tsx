@@ -14,20 +14,13 @@ import { UpdateNeededNote } from "@/components/UpdateNeededNote"
 import { WaitHint } from "@/components/WaitHint"
 import type { PhotoCache } from "@/data/photoCache"
 import { useIssuePhotos } from "@/hooks/useIssuePhotos"
-import { dateKey, dayDiff, fmtDate, fmtFullDate, fmtTime, fmtWhen } from "@/lib/format"
-
-function issueWhen(ts: string, now: Date): string {
-  const d = dayDiff(ts, now)
-  if (d >= 0 && d < 7) return fmtWhen(ts, now)
-  if (dateKey(ts).slice(0, 4) === dateKey(now).slice(0, 4)) return `${fmtDate(ts)}${fmtTime(ts)}`
-  return `${fmtFullDate(ts)} ${fmtTime(ts)}`
-}
+import { dateKey, fmtEntryWhen } from "@/lib/format"
 
 const sevTone = (s: IssueEntry["severity"]): "urgent" | "watch" | "info" =>
   s === "緊急" ? "urgent" : s === "要注意" ? "watch" : "info"
 
 export function IssueDetailScreen({
-  now, network, queuedCount, issue, version, api, cache, onBack,
+  now, network, queuedCount, issue, version, api, cache, onBack, backLabel = "異常回報",
   onEdit, onUndo, onRestore, onResolve, onReopen,
 }: {
   now: Date
@@ -38,6 +31,7 @@ export function IssueDetailScreen({
   api: Api
   cache: PhotoCache
   onBack: () => void
+  backLabel?: string
   onEdit: (id: string, patch: EntryPatch) => void
   onUndo: () => void
   onRestore: () => void
@@ -68,7 +62,7 @@ export function IssueDetailScreen({
 
   if (!issue) {
     return (
-      <ScreenLayout title="異常詳情" onBack={onBack} backLabel="異常回報">
+      <ScreenLayout title="異常詳情" onBack={onBack} backLabel={backLabel}>
         <div className="grid justify-items-center gap-3 py-16 text-center">
           <p className="text-muted-foreground">找不到這筆回報，可能已經撤銷了。</p>
           <Button variant="outline" onClick={onBack}>回異常回報</Button>
@@ -78,7 +72,7 @@ export function IssueDetailScreen({
   }
 
   return (
-    <ScreenLayout title="異常詳情" onBack={onBack} backLabel="異常回報"
+    <ScreenLayout title="異常詳情" onBack={onBack} backLabel={backLabel}
       banner={<NetworkBanner network={network} queuedCount={queuedCount} />}
       bottom={!issue.deleted ? (
         <BottomActionBar>
@@ -99,7 +93,7 @@ export function IssueDetailScreen({
 
         <Card className="px-4 py-4">
           <dl className="grid gap-2">
-            <div className="grid grid-cols-[5em_1fr] gap-x-3"><dt className="text-muted-foreground">時間</dt><dd>{issueWhen(issue.ts, now)}</dd></div>
+            <div className="grid grid-cols-[5em_1fr] gap-x-3"><dt className="text-muted-foreground">時間</dt><dd>{fmtEntryWhen(issue.ts, now)}</dd></div>
             <div className="grid grid-cols-[5em_1fr] gap-x-3"><dt className="text-muted-foreground">記錄人</dt><dd>{issue.who}</dd></div>
             <div className="grid grid-cols-[5em_1fr] gap-x-3"><dt className="text-muted-foreground">備註</dt>
               <dd className={issue.note ? "whitespace-pre-wrap" : "text-muted-foreground"}>{issue.note || "沒有備註"}</dd></div>

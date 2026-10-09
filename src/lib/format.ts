@@ -77,6 +77,21 @@ export function fmtWhen(iso: string, now: Date): string {
   return `${fmtDayLabel(iso, now)} ${fmtTime(iso)}`
 }
 
+/** 詳細頁時間：7 天內用 fmtWhen；同年更早「9/24（四）18:05」；跨年「2025/12/30 18:05」 */
+export function fmtEntryWhen(ts: string, now: Date): string {
+  const d = dayDiff(ts, now)
+  if (d >= 0 && d < 7) return fmtWhen(ts, now)
+  if (dateKey(ts).slice(0, 4) === dateKey(now).slice(0, 4)) return `${fmtDate(ts)}${fmtTime(ts)}`
+  return `${fmtFullDate(ts)} ${fmtTime(ts)}`
+}
+
+/** Med「下次」列：只接受 YYYY-MM-DD，回傳含年份的 `2026/11/09（一）`；否則 null */
+export function fmtNextDue(nextDue: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(nextDue)) return null
+  const p = parts(new Date(`${nextDue}T12:00:00+08:00`))
+  return `${p.y}/${String(p.m).padStart(2, "0")}/${String(p.d).padStart(2, "0")}（${WEEK[p.wd]}）`
+}
+
 /** +0.08／−0.05（用全形減號以利閱讀） */
 export function fmtDiff(n: number, digits = 2): string {
   if (Math.abs(n) < 0.005) return "±0"

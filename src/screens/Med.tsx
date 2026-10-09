@@ -70,13 +70,13 @@ export function MedScreen(p: MedScreenProps) {
             <div className="flex items-start justify-between gap-2">
               <div>
                 <p className="text-muted-foreground">最近要到期</p>
-                <p className="text-lg font-bold">{hero.entry.kind}：{hero.entry.product}</p>
-                <p className="text-muted-foreground">上次 {fmtDate(hero.entry.ts)}・{hero.entry.who}・{hero.entry.dose}</p>
+                <p className="text-lg font-bold">{[hero.entry.kind.trim(), hero.entry.product.trim()].filter(Boolean).join("：") || "驅蟲／疫苗／用藥"}</p>
+                <p className="text-muted-foreground">{[`上次 ${fmtDate(hero.entry.ts)}`, hero.entry.who, hero.entry.dose.trim()].filter(Boolean).join("・")}</p>
               </div>
               <DueStatus daysLeft={hero.daysLeft} />
             </div>
             <Button size="lg" className="w-full whitespace-normal" onClick={() => p.onGiveAgain(hero.entry)}>
-              <Check aria-hidden strokeWidth={3} />已給 {hero.entry.product}
+              <Check aria-hidden strokeWidth={3} />已給 {hero.entry.product.trim() || hero.entry.kind.trim() || "這一筆"}
             </Button>
             <p className="text-muted-foreground">
               點一下就記成今天給，下次日期自動排到 {autoNextDue(hero.entry.kind, today, p.config)?.replaceAll("-", "/") ?? "—"}。
@@ -96,7 +96,7 @@ export function MedScreen(p: MedScreenProps) {
                     <span className="block font-medium">{u.entry.kind}</span>
                     <span className="block text-muted-foreground">下次 {fmtDate(d2(u.next_due))} <DueStatus daysLeft={u.daysLeft} /></span>
                   </span>
-                  <Button variant="outline" size="sm" onClick={() => p.onGiveAgain(u.entry)} aria-label={`已給 ${u.entry.product}`}>
+                  <Button variant="outline" size="sm" onClick={() => p.onGiveAgain(u.entry)} aria-label={`已給 ${u.entry.product.trim() || u.entry.kind.trim() || "這一筆"}`}>
                     <Check aria-hidden />已給
                   </Button>
                 </li>

@@ -43,6 +43,7 @@ export interface HomeScreenProps {
   /** 最近紀錄（已排序，新的在前），首頁取前 3 筆 */
   recent: AnyEntry[]
   onOpen: (to: HomeTarget) => void
+  onOpenEntry: (e: AnyEntry) => void
   onLogCare: (kind: CareKind, onUndo: () => void) => void
   onOpenCareHistory: () => void
   onFillEaten: (entryId: string, pct: EatenPct) => void
@@ -177,7 +178,7 @@ export function HomeScreen(p: HomeScreenProps) {
                 <Button variant="ghost" size="sm" onClick={() => p.onOpen("timeline")}>看全部 ›</Button>
               </div>
               <TimelineList label="最近紀錄">
-                {p.recent.slice(0, 3).map((e) => <TimelineItem key={e.id} entry={e} />)}
+                {p.recent.slice(0, 3).map((e) => <TimelineItem key={e.id} entry={e} onOpen={p.onOpenEntry} />)}
               </TimelineList>
             </section>
           )}

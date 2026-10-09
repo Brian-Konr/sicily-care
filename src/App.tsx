@@ -16,11 +16,14 @@ import { WeightScreen } from "@/screens/Weight"
 import { MedScreen } from "@/screens/Med"
 import { IssueScreen } from "@/screens/Issue"
 import { IssueDetailScreen } from "@/screens/IssueDetail"
+import { EntryDetailScreen } from "@/screens/EntryDetail"
 import { TimelineScreen } from "@/screens/Timeline"
 import { OnboardingScreen } from "@/screens/Onboarding"
 import { LocalTrialBanner } from "@/components/NetworkBanner"
 import { SettingsScreen } from "@/screens/Settings"
 import { addDays, dateKey, fmtDate, fmtTime } from "@/lib/format"
+import { TYPE_META } from "@/lib/describe"
+import { formatHash, parseHash, type Route } from "@/lib/route"
 import { CARE_ITEMS } from "@/lib/care"
 import { countMatching, firstBefore, type TimelineFilter } from "@/lib/history"
 import { autoNextDue, clinicFromConfig, eatenLabel, timelineItems } from "@/lib/rules"
@@ -28,31 +31,15 @@ import { uuid, type Api } from "@/api"
 import { createGasAdapter } from "@/api/gas"
 import { NetworkError, ServerError } from "@/api/errors"
 import type { LogTable } from "@/api/sheet"
-import { TABLE_OF_TYPE, configChanges, decodeSnapshot, encodeFields, supportsV11 } from "@/data/codec"
+import { TABLE_OF_TYPE, TYPE_OF_TABLE, configChanges, decodeSnapshot, encodeFields, supportsV11 } from "@/data/codec"
 import { CAT } from "@/data/defaults"
 import { compressImage, pickImageFile, uploadIssuePhotos } from "@/data/photo"
 import { createIdbPhotoCache } from "@/data/photoCache"
 import { DEFAULT_USERS, DEMO, GAS_URL, clearSettings, loadSettings, saveSettings, type Settings } from "@/data/settings"
 import { useSicily } from "@/hooks/useSicily"
 
-type Route =
-  | { name: "home" | "feed" | "litter" | "weight" | "med" | "issue" | "timeline" | "settings" | "foods" }
-  | { name: "issue-detail"; id: string }
-
-const SCREENS: Route["name"][] = ["home", "feed", "litter", "weight", "med", "issue", "timeline", "settings", "foods"]
-
-const readHash = (): Route => {
-  const h = location.hash.replace(/^#/, "")
-  if (h.startsWith("issue/")) {
-    const id = decodeURIComponent(h.slice("issue/".length))
-    if (id) return { name: "issue-detail", id }
-  }
-  return (SCREENS as string[]).includes(h) ? { name: h as Exclude<Route["name"], "issue-detail"> } : { name: "home" }
-}
-
-const writeHash = (r: Route) => {
-  location.hash = r.name === "issue-detail" ? `issue/${encodeURIComponent(r.id)}` : r.name
-}
+const readHash = (): Route => parseHash(location.hash)
+const writeHash = (r: Route) => { location.hash = formatHash(r) }
 
 function useNow(stepMs = 30_000) {
   const [now, setNow] = useState(() => new Date())
@@ -137,7 +124,13 @@ function Main({ settings, onSignOut }: { settings: Settings; onSignOut: () => vo
   const setRoute = useCallback((r: Route) => { writeHash(r); setRouteState(r) }, [])
   useEffect(() => { const on = () => setRouteState(readHash()); addEventListener("hashchange", on); return () => removeEventListener("hashchange", on) }, [])
   const back = () => setRoute({ name: "home" })
-  const openScreen = (name: Exclude<Route, { name: "issue-detail" }>["name"]) => setRoute({ name })
+  const openScreen = (name: Exclude<Route["name"], "issue-detail" | "entry-detail">) => setRoute({ name })
+  const detailOrigin = useRef<"home" | "timeline" | "issue">("issue")
+  function openEntry(e: AnyEntry, from: "home" | "timeline") {
+    detailOrigin.current = from
+    if (e.type === "issue") setRoute({ name: "issue-detail", id: e.id })
+    else setRoute({ name: "entry-detail", table: TABLE_OF_TYPE[e.type], id: e.id })
+  }
 
   const dirty = useRef(false)
   useEffect(() => {
@@ -270,19 +263,33 @@ function Main({ settings, onSignOut }: { settings: Settings; onSignOut: () => vo
   const emptyConfig = { birthday_est: "", birthday_estimated: true, clinic_name: "", clinic_phone: "", clinic_24h: false, weight_interval_days: 14, deworm_int_days: 90, med_interval_days: {}, litter_clumping: true, litter_wash_int_days: 30, feeder_clean_int_days: 30, desiccant_int_days: 30 }
 
   if (!data) {
+    if (route.name === "entry-detail") {
+      const fromHome = detailOrigin.current === "home"
+      return (
+        <EntryDetailScreen now={now} network={network} queuedCount={queuedCount} entry={undefined} pending
+          version={0} api={api} cache={photoCache}
+          title={route.table ? TYPE_META[TYPE_OF_TABLE[route.table]].label : "紀錄"}
+          backLabel={fromHome ? "首頁" : "紀錄"}
+          onBack={() => setRoute({ name: fromHome ? "home" : "timeline" })}
+          onBackToTimeline={() => setRoute({ name: "timeline" })}
+          onEdit={() => {}} onUndo={() => {}} onRestore={() => {}} />
+      )
+    }
     if (route.name === "timeline") {
       return (
         <TimelineScreen now={now} network={network} queuedCount={queuedCount} failedCount={failedCount}
           entries={[]} loading filters={filters} onFilters={setFilters} from={historyFrom}
           end={{ kind: "loading" }} mainRef={mainRef} onMainScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
-          scrollTop={scrollTop} onHome={back} onUndo={() => {}} onRestore={() => {}} onEdit={() => {}} onRetrySync={retrySync} />
+          scrollTop={scrollTop} onHome={back} onOpen={(e) => openEntry(e, "timeline")}
+          onUndo={() => {}} onRestore={() => {}} onEdit={() => {}} onRetrySync={retrySync} />
       )
     }
     return (
       <HomeScreen cat={CAT} me={me} now={now} status={loadState === "error" ? "error" : "loading"} network={network}
         queuedCount={queuedCount} failedCount={failedCount} config={emptyConfig}
         feeds={[]} litter={[]} weights={[]} meds={[]} cares={[]} version={0} recent={[]}
-        onOpen={openScreen} onLogCare={() => {}} onOpenCareHistory={() => {}} onFillEaten={() => {}} onLitterNormal={() => {}} onRetry={() => void refresh()} onRetrySync={retrySync} />
+        onOpen={openScreen} onOpenEntry={(e) => openEntry(e, "home")}
+        onLogCare={() => {}} onOpenCareHistory={() => {}} onFillEaten={() => {}} onLitterNormal={() => {}} onRetry={() => void refresh()} onRetrySync={retrySync} />
     )
   }
 
@@ -357,13 +364,16 @@ function Main({ settings, onSignOut }: { settings: Settings; onSignOut: () => vo
           }}
           onResolve={(id) => { edit("Issue", id, { resolved: true }); toast("已標記解決", { action: { label: "復原", onClick: () => edit("Issue", id, { resolved: false }) }, duration: 5000 }) }}
           onReopen={(id) => { edit("Issue", id, { resolved: false }); toast("已改回未解決") }}
-          onOpenDetail={(id) => setRoute({ name: "issue-detail", id })} />
+          onOpenDetail={(id) => { detailOrigin.current = "issue"; setRoute({ name: "issue-detail", id }) }} />
       )
     case "issue-detail": {
       const issue = data.issues.find((i) => i.id === route.id)
+      const origin = detailOrigin.current
+      const issueBack = origin === "home" ? "home" : origin === "timeline" ? "timeline" : "issue"
+      const issueBackLabel = origin === "home" ? "首頁" : origin === "timeline" ? "紀錄" : "異常回報"
       return (
         <IssueDetailScreen {...common} issue={issue} version={data.version} api={api} cache={photoCache}
-          onBack={() => setRoute({ name: "issue" })}
+          onBack={() => setRoute({ name: issueBack })} backLabel={issueBackLabel}
           onEdit={(id, patch: EntryPatch) => { edit("Issue", id, patch); toast("已儲存修改") }}
           onUndo={() => {
             if (!issue) return
@@ -381,6 +391,7 @@ function Main({ settings, onSignOut }: { settings: Settings; onSignOut: () => vo
           filters={filters} onFilters={setFilters} from={historyFrom} end={endKind}
           mainRef={mainRef} onMainScroll={(e) => setScrollTop(e.currentTarget.scrollTop)} scrollTop={scrollTop}
           onHome={back}
+          onOpen={(e) => openEntry(e, "timeline")}
           onUndo={(e: AnyEntry) => {
             send(api.remove(TABLE_OF_TYPE[e.type], e.id))
             toast("已撤銷（劃掉，可復原）", { action: { label: "復原", onClick: () => send(api.restore(TABLE_OF_TYPE[e.type], e.id)) }, duration: 5000 })
@@ -392,6 +403,33 @@ function Main({ settings, onSignOut }: { settings: Settings; onSignOut: () => vo
           }}
           onRetrySync={retrySync} />
       )
+    case "entry-detail": {
+      const found = route.table
+        ? data.all.find((e) => e.id === route.id && TABLE_OF_TYPE[e.type] === route.table)
+        : undefined
+      const fromHome = detailOrigin.current === "home"
+      const table = route.table
+      return (
+        <EntryDetailScreen {...common} entry={found} version={data.version} api={api} cache={photoCache}
+          title={table ? TYPE_META[TYPE_OF_TABLE[table]].label : "紀錄"}
+          backLabel={fromHome ? "首頁" : "紀錄"}
+          onBack={() => setRoute({ name: fromHome ? "home" : "timeline" })}
+          onBackToTimeline={() => setRoute({ name: "timeline" })}
+          onEdit={(id, patch: EntryPatch) => {
+            if (!table) return
+            edit(table, id, patch); toast("已儲存修改")
+          }}
+          onUndo={() => {
+            if (!table || !found) return
+            send(api.remove(table, found.id))
+            toast("已撤銷（劃掉，可復原）", { action: { label: "復原", onClick: () => send(api.restore(table, found.id)) }, duration: 5000 })
+          }}
+          onRestore={() => {
+            if (!table || !found) return
+            send(api.restore(table, found.id)); toast("已復原")
+          }} />
+      )
+    }
     case "settings":
       return (
         <SettingsScreen now={now} catName={CAT.name} values={settingsValues!} me={me} users={data.users}
@@ -408,7 +446,8 @@ function Main({ settings, onSignOut }: { settings: Settings; onSignOut: () => vo
         <HomeScreen cat={CAT} me={me} {...common} failedCount={failedCount} config={config} status="ready"
           feeds={data.feeds} litter={data.litter} weights={data.weights} meds={data.meds} cares={data.cares} version={data.version}
           recent={timelineItems(all.filter((e) => !e.deleted), now)}
-          onOpen={openScreen} onLogCare={logCare} onOpenCareHistory={() => { setFilters(["居家維護"]); setRoute({ name: "timeline" }) }}
+          onOpen={openScreen} onOpenEntry={(e) => openEntry(e, "home")}
+          onLogCare={logCare} onOpenCareHistory={() => { setFilters(["居家維護"]); setRoute({ name: "timeline" }) }}
           onFillEaten={fillEaten} onLitterNormal={litterNormal}
           onRetry={() => void refresh()} onRetrySync={retrySync} />
       )

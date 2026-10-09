@@ -28,6 +28,7 @@ export interface TimelineScreenProps {
   onMainScroll?: UIEventHandler<HTMLElement>
   scrollTop: number
   onHome: () => void
+  onOpen: (e: AnyEntry) => void
   onUndo: (e: AnyEntry) => void
   onRestore: (e: AnyEntry) => void
   onEdit: (id: string, patch: EntryPatch) => void
@@ -92,7 +93,7 @@ export function TimelineScreen(p: TimelineScreenProps) {
             <DayHeader iso={g.items[0].ts} now={p.now} />
             <TimelineList>
               {g.items.map((e) => (
-                <TimelineItem key={e.id} entry={e} actions onUndo={p.onUndo} onRestore={p.onRestore} onEdit={setEditing} />
+                <TimelineItem key={e.id} entry={e} actions onOpen={p.onOpen} onUndo={p.onUndo} onRestore={p.onRestore} onEdit={setEditing} />
               ))}
             </TimelineList>
           </section>
