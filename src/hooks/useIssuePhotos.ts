@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { NetworkError, ServerError } from "@/api/errors"
 import type { Api } from "@/api"
 import type { PhotoCache } from "@/data/photoCache"
 import { pendingLocalPhotos } from "@/data/photo"
+import { dataUrlByteLength, warnPhoto } from "@/data/photoBytes"
+import { loadIssuePhoto, noteImgError } from "@/data/photoLoad"
 import { supportsV11 } from "@/data/codec"
 import type { PhotoThumbStatus } from "@/components/PhotoThumb"
 
@@ -10,7 +11,9 @@ export interface IssuePhotoItem {
   key: string
   fileId?: string
   status: PhotoThumbStatus
-  dataUrl?: string
+  /** Remote ready: blob: URL. Local: data URL. Absent otherwise. */
+  src?: string
+  byteLength?: number
 }
 
 export function useIssuePhotos(opts: {
@@ -23,58 +26,124 @@ export function useIssuePhotos(opts: {
 }) {
   const { issueId, photoIds, version, api, cache, storage = localStorage } = opts
   const [items, setItems] = useState<IssuePhotoItem[]>([])
+  const itemsRef = useRef(items)
+  itemsRef.current = items
   const inflight = useRef(new Set<string>())
+  const urls = useRef(new Map<string, string>())
+  const gen = useRef(0)
+  const broken = useRef(new Set<string>())
 
   const setOne = useCallback((key: string, patch: Partial<IssuePhotoItem>) => {
     setItems((xs) => xs.map((x) => (x.key === key ? { ...x, ...patch } : x)))
   }, [])
 
-  const fetchOne = useCallback(async (fileId: string) => {
+  const revoke = useCallback((key: string) => {
+    const u = urls.current.get(key)
+    if (!u) return
+    URL.revokeObjectURL(u)
+    urls.current.delete(key)
+  }, [])
+
+  const urlFor = useCallback((key: string, blob: Blob) => {
+    revoke(key)
+    const u = URL.createObjectURL(blob)
+    urls.current.set(key, u)
+    return u
+  }, [revoke])
+
+  const fetchOne = useCallback(async (fileId: string, ticket: number, skipCache?: boolean) => {
     if (inflight.current.has(fileId)) return
     inflight.current.add(fileId)
-    setOne(fileId, { status: "loading" })
+    revoke(fileId)
+    setOne(fileId, { status: "loading", src: undefined })
     try {
-      const hit = await cache.get(fileId)
-      if (hit) { setOne(fileId, { status: "ready", dataUrl: hit.dataUrl }); return }
-      if (!supportsV11(version)) return
-      if (navigator.onLine === false) { setOne(fileId, { status: "offline" }); return }
-      const r = await api.getPhoto(fileId)
-      const dataUrl = `data:${r.mime};base64,${r.data}`
-      await cache.put(fileId, r.mime, dataUrl)
-      setOne(fileId, { status: "ready", dataUrl })
-    } catch (err) {
-      if (err instanceof ServerError && err.code === "forbidden") setOne(fileId, { status: "forbidden" })
-      else if (err instanceof NetworkError && navigator.onLine === false) setOne(fileId, { status: "offline" })
-      else setOne(fileId, { status: "error" })
+      const result = await loadIssuePhoto({ fileId, version, api, cache, skipCache })
+      if (ticket !== gen.current) return
+      if (result.status === "ready") {
+        try {
+          const src = urlFor(fileId, result.blob)
+          setOne(fileId, { status: "ready", src, byteLength: result.byteLength })
+        } catch {
+          warnPhoto("decode_failed", result.blob.size)
+          setOne(fileId, { status: "error", src: undefined, byteLength: result.blob.size })
+        }
+        return
+      }
+      if (result.status === "error") {
+        setOne(fileId, { status: "error", src: undefined, byteLength: result.byteLength })
+        return
+      }
+      if (result.status === "offline" || result.status === "forbidden") {
+        setOne(fileId, { status: result.status, src: undefined })
+        return
+      }
+      setOne(fileId, { status: "loading", src: undefined })
     } finally {
       inflight.current.delete(fileId)
     }
-  }, [api, cache, setOne, version])
+  }, [api, cache, setOne, version, revoke, urlFor])
 
   useEffect(() => {
+    gen.current += 1
+    const ticket = gen.current
+    for (const key of [...urls.current.keys()]) revoke(key)
+    urls.current.clear()
+    inflight.current.clear()
+    broken.current.clear()
+
     const local = pendingLocalPhotos(issueId, storage)
     const ids = photoIds.slice(0, 3)
     const next: IssuePhotoItem[] = [
       ...ids.map((id) => ({ key: id, fileId: id, status: "loading" as const })),
-      ...local.map((p, i) => ({ key: `local-${i}`, status: "local" as const, dataUrl: p.dataUrl })),
+      ...local.map((p, i) => {
+        const src = p.dataUrl
+        return { key: `local-${i}`, status: "local" as const, src, byteLength: dataUrlByteLength(src) }
+      }),
     ]
     setItems(next)
     if (!supportsV11(version)) return
-    for (const id of ids) void fetchOne(id)
-  }, [issueId, photoIds.join(","), version, fetchOne, storage])
+    for (const id of ids) void fetchOne(id, ticket, false)
+  }, [issueId, photoIds.join(","), version, fetchOne, storage, revoke])
 
   useEffect(() => {
     const on = () => {
-      for (const it of items) if (it.fileId && it.status === "offline") void fetchOne(it.fileId)
+      for (const it of items) if (it.fileId && it.status === "offline") void fetchOne(it.fileId, gen.current, false)
     }
     addEventListener("online", on)
     return () => removeEventListener("online", on)
   }, [items, fetchOne])
 
+  useEffect(() => () => {
+    gen.current += 1
+    for (const key of [...urls.current.keys()]) revoke(key)
+    urls.current.clear()
+  }, [revoke])
+
   const retry = (key: string) => {
-    const it = items.find((x) => x.key === key)
-    if (it?.fileId) void fetchOne(it.fileId)
+    broken.current.delete(key)
+    if (key.startsWith("local-")) {
+      const index = Number(key.slice("local-".length))
+      const local = pendingLocalPhotos(issueId, storage)
+      const p = local[index]
+      if (p) {
+        const src = p.dataUrl
+        setOne(key, { status: "local", src, byteLength: dataUrlByteLength(src) })
+      }
+      return
+    }
+    const it = itemsRef.current.find((x) => x.key === key)
+    if (it?.fileId) void fetchOne(it.fileId, gen.current, true)
   }
 
-  return { items, retry }
+  const markImgError = (key: string) => {
+    if (broken.current.has(key)) return
+    const item = itemsRef.current.find((x) => x.key === key)
+    if (!item || (item.status !== "ready" && item.status !== "local")) return
+    broken.current.add(key)
+    revoke(key)
+    setOne(key, { status: "error", src: undefined, byteLength: item.byteLength ?? 0 })
+    void noteImgError({ fileId: item.fileId, byteLength: item.byteLength ?? 0, cache })
+  }
+
+  return { items, retry, markImgError }
 }

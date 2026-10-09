@@ -63,7 +63,7 @@ export function IssueDetailScreen({
   const showPhotos = issue && (n > 0 || ((issue.photo_ids.length > 0 || issue.photo_urls.some(Boolean)) && !v11))
 
   const viewerPhotos: ViewerPhoto[] = useMemo(() => photos.items.map((p, i) => ({
-    status: p.status, dataUrl: p.dataUrl, alt: photoAria(title, i, n, p.status),
+    status: p.status, src: p.src, alt: photoAria(title, i, n, p.status),
   })), [photos.items, title, n])
 
   if (!issue) {
@@ -113,7 +113,8 @@ export function IssueDetailScreen({
               <>
                 <div className="grid grid-cols-3 gap-2">
                   {photos.items.map((p, i) => (
-                    <PhotoThumb key={p.key} status={p.status} dataUrl={p.dataUrl}
+                    <PhotoThumb key={p.key} status={p.status} src={p.src}
+                      onImgError={() => photos.markImgError(p.key)}
                       alt={photoAria(title, i, n, p.status)} label={photoAria(title, i, n, p.status)}
                       buttonRef={(el) => { thumbRefs.current[i] = el }}
                       onClick={() => {
@@ -154,7 +155,9 @@ export function IssueDetailScreen({
       <EditEntrySheet entry={editing ? { type: "issue", ...issue } : null} onClose={() => setEditing(false)}
         onSave={(id, patch) => { onEdit(id, patch); setEditing(false) }} maxDate={dateKey(now)} />
       <PhotoViewer open={viewer !== null} title={title} photos={viewerPhotos} index={viewer ?? 0}
-        onIndex={setViewer} onClose={() => setViewer(null)} onRetry={(i) => photos.retry(photos.items[i]?.key ?? "")}
+        onIndex={setViewer} onClose={() => setViewer(null)}
+        onImgError={(i) => photos.markImgError(photos.items[i]?.key ?? "")}
+        onRetry={(i) => photos.retry(photos.items[i]?.key ?? "")}
         openerRef={openerRef} />
     </ScreenLayout>
   )

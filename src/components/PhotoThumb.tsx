@@ -7,15 +7,16 @@ import { cn } from "@/lib/utils"
 export type PhotoThumbStatus = "loading" | "ready" | "error" | "offline" | "forbidden" | "local"
 
 export function PhotoThumb({
-  status, dataUrl, alt, label, onClick, disabled, buttonRef,
+  status, src, alt, label, onClick, disabled, buttonRef, onImgError,
 }: {
   status: PhotoThumbStatus
-  dataUrl?: string
+  src?: string
   alt: string
   label: string
   onClick?: () => void
   disabled?: boolean
   buttonRef?: Ref<HTMLButtonElement>
+  onImgError?: () => void
 }) {
   const pressable = status === "ready" || status === "error" || status === "local"
   return (
@@ -23,9 +24,9 @@ export function PhotoThumb({
       className="aspect-square overflow-hidden rounded-lg border"
       aria-label={label}>
       {status === "loading" && <Skeleton className="aspect-square size-full" aria-hidden />}
-      {(status === "ready" || status === "local") && dataUrl && (
+      {(status === "ready" || status === "local") && src && (
         <span className="relative block size-full">
-          <img src={dataUrl} alt={alt} className="size-full object-cover" />
+          <img src={src} alt={alt} className="size-full object-cover" onError={onImgError} />
           {status === "local" && (
             <span className="absolute bottom-1 left-1"><StatusBadge tone="info" label="待上傳" /></span>
           )}

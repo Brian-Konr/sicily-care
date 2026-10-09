@@ -11,12 +11,12 @@ import { cn } from "@/lib/utils"
 
 export interface ViewerPhoto {
   status: PhotoThumbStatus
-  dataUrl?: string
+  src?: string
   alt: string
 }
 
 export function PhotoViewer({
-  open, title, photos, index, onIndex, onClose, onRetry, openerRef,
+  open, title, photos, index, onIndex, onClose, onRetry, onImgError, openerRef,
 }: {
   open: boolean
   title: string
@@ -25,6 +25,7 @@ export function PhotoViewer({
   onIndex: (i: number) => void
   onClose: () => void
   onRetry: (i: number) => void
+  onImgError?: (index: number) => void
   openerRef?: React.RefObject<HTMLElement | null>
 }) {
   const cur = photos[index]
@@ -141,9 +142,9 @@ export function PhotoViewer({
           </div>
           <div ref={region} className="relative min-h-0 flex-1 touch-none select-none"
             onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
-            {cur?.status === "ready" || cur?.status === "local" ? (
-              <img src={cur.dataUrl} alt={cur.alt} className={cn("size-full object-contain", !reduce && snap)} style={imgStyle} draggable={false} />
-            ) : (
+            {(cur?.status === "ready" || cur?.status === "local") && cur.src ? (
+              <img src={cur.src} alt={cur.alt} className={cn("size-full object-contain", !reduce && snap)} style={imgStyle} draggable={false} onError={() => onImgError?.(index)} />
+            ) : (cur?.status === "ready" || cur?.status === "local") ? null : (
               <div className="grid h-full place-items-center px-6 text-center text-muted-foreground">
                 {cur?.status === "loading" && (
                   <div className="grid w-full max-w-xs gap-3">
