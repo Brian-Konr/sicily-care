@@ -1,7 +1,7 @@
 import { test, expect, vi } from 'vitest'
 import { NetworkError, ServerError } from '@/api/errors'
 import { createMemoryPhotoCache, type PhotoCache } from '@/data/photoCache'
-import { loadIssuePhoto, noteImgError } from '@/data/photoLoad'
+import { loadIssuePhoto, noteImgError, photoFetchFailCode } from '@/data/photoLoad'
 import type { PhotoDecoder, PhotoFailCode } from '@/data/photoBytes'
 
 const b64 = (bytes: Uint8Array) => Buffer.from(bytes).toString('base64')
@@ -57,17 +57,28 @@ test('1 合法 JPEG 解碼成功是 ready，getPhoto 與 put 各一次', async (
   expect(stored?.blob.size).toBe(100)
 })
 
-test('2 mime image/gif 是 bad_mime，不 put', async () => {
+test('2 後端說 image/heic 且 bytes 不是 JPEG/PNG/WebP 是 bad_mime，不 put', async () => {
   const { cache, counts, inner } = countingCache()
   const warn = vi.fn<(code: PhotoFailCode, n: number) => void>()
-  const getPhoto = countingApi(async () => ({ mime: 'image/gif', data: jpeg64 }))
+  const getPhoto = countingApi(async () => ({ mime: 'image/heic', data: b64(new Uint8Array([0, 0, 0, 0x18])) }))
   const r = await loadIssuePhoto({
     fileId: 'f', version: 2, api: getPhoto.api, cache, online: true, decode: decodeOk, warn,
   })
-  expect(r).toEqual({ status: 'error', code: 'bad_mime', byteLength: 0 })
+  expect(r).toEqual({ status: 'error', code: 'bad_mime', byteLength: 4 })
   expect(counts.put).toBe(0)
   expect(await inner.get('f')).toBeNull()
-  expect(warn).toHaveBeenCalledWith('bad_mime', 0)
+  expect(warn).toHaveBeenCalledWith('bad_mime', 4)
+})
+
+test('2b contentType 是 heic／octet-stream／空字串但 bytes 是 JPEG：顯示，Blob type 與快取 mime 用 image/jpeg', async () => {
+  for (const mime of ['image/heic', 'application/octet-stream', '', 'image/jpg']) {
+    const { cache, inner } = countingCache()
+    const getPhoto = countingApi(async () => ({ mime, data: jpeg64 }))
+    const r = await loadIssuePhoto({ fileId: 'f', version: 2, api: getPhoto.api, cache, online: true, decode: decodeOk, warn: () => {} })
+    expect(r.status).toBe('ready')
+    if (r.status === 'ready') expect(r.blob.type).toBe('image/jpeg')
+    expect((await inner.get('f'))?.mime).toBe('image/jpeg')
+  }
 })
 
 test('3 data 空字串是 bad_base64，不 put', async () => {
@@ -222,18 +233,43 @@ test('13 forbidden 不 warn、不 put', async () => {
   expect(await inner.get('f')).toBeNull()
 })
 
-test('14 連線中 NetworkError 是 error 且沒有 code，不 warn', async () => {
-  const { cache, counts, inner } = countingCache()
-  const warn = vi.fn<(code: PhotoFailCode, n: number) => void>()
-  const getPhoto = countingApi(async () => { throw new NetworkError() })
-  const r = await loadIssuePhoto({
-    fileId: 'f', version: 2, api: getPhoto.api, cache, online: true, decode: decodeOk, warn,
-  })
-  expect(r).toEqual({ status: 'error', byteLength: 0 })
-  expect(r.status === 'error' ? r.code : 'no').toBeUndefined()
-  expect(warn).not.toHaveBeenCalled()
-  expect(counts.put).toBe(0)
-  expect(await inner.get('f')).toBeNull()
+test('14 getPhoto 失敗都有診斷碼並 warn，不 put', async () => {
+  const cases: [unknown, PhotoFailCode][] = [
+    [new NetworkError(undefined, 'timeout'), 'net_timeout'],
+    [new NetworkError(), 'net_fetch'],
+    [new NetworkError(undefined, 'fetch'), 'net_fetch'],
+    [new NetworkError('x', 'http-503'), 'http_503'],
+    [new NetworkError('x', 'http-404'), 'http_404'],
+    [new ServerError('bad_response', '回應不是 JSON'), 'bad_response'],
+    [new ServerError('server_error', 'Exceeded memory'), 'server_error'],
+    [new ServerError('no_folder'), 'server_no_folder'],
+    [new ServerError('busy'), 'server_busy'],
+    [new ServerError('unauthorized'), 'server_unauthorized'],
+    [new TypeError('boom'), 'unexpected'],
+  ]
+  for (const [err, code] of cases) {
+    const { cache, counts, inner } = countingCache()
+    const warn = vi.fn<(code: PhotoFailCode, n: number) => void>()
+    const getPhoto = countingApi(async () => { throw err })
+    const r = await loadIssuePhoto({
+      fileId: 'f', version: 2, api: getPhoto.api, cache, online: true, decode: decodeOk, warn,
+    })
+    expect(r).toEqual({ status: 'error', code, byteLength: 0 })
+    expect(warn).toHaveBeenCalledWith(code, 0)
+    expect(counts.put).toBe(0)
+    expect(await inner.get('f')).toBeNull()
+  }
+})
+
+test('14b photoFetchFailCode 不把後端訊息帶進代碼', () => {
+  expect(photoFetchFailCode(new ServerError('Weird Code!', '含 email a@b.c 的訊息'))).toBe('server_weird_code')
+})
+
+test('14c getPhoto 回 ok 但沒有 data 是 bad_base64', async () => {
+  const { cache } = countingCache()
+  const getPhoto = countingApi(async () => ({ mime: 'image/jpeg' } as unknown as { mime: string; data: string }))
+  const r = await loadIssuePhoto({ fileId: 'f', version: 2, api: getPhoto.api, cache, online: true, decode: decodeOk, warn: () => {} })
+  expect(r).toEqual({ status: 'error', code: 'bad_base64', byteLength: 0 })
 })
 
 test('15 noteImgError 有 fileId 會刪快取並 warn img_error', async () => {
@@ -273,4 +309,9 @@ test('17 預設 warn 不把 base64 印進 console', async () => {
   } finally {
     spy.mockRestore()
   }
+})
+
+test('14c photoFetchFailCode 不重複 server_ 前綴', () => {
+  expect(photoFetchFailCode(new ServerError('server_error', 'x'))).toBe('server_error')
+  expect(photoFetchFailCode(new ServerError('busy', 'x'))).toBe('server_busy')
 })

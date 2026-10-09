@@ -1,6 +1,9 @@
 import { test, expect, vi } from 'vitest'
 import {
   decodePhotoBlob,
+  joinPhotoCodes,
+  safeCodePart,
+  sniffPhotoMime,
   validatePhotoPayload,
   warnPhoto,
 } from '@/data/photoBytes'
@@ -53,21 +56,69 @@ test('空字串、非 base64、data URL 是 bad_base64', () => {
   }
 })
 
-test('gif、image/jpg、帶參數與非字串 mime 是 bad_mime', () => {
-  const data = b64(jpeg)
-  for (const mime of ['image/gif', 'image/jpg', 'image/jpeg; charset=binary', 1]) {
-    const r = validatePhotoPayload(mime, data)
-    expect(r).toEqual({ ok: false, code: 'bad_mime', byteLength: 0 })
+test('格式看檔頭不看 contentType：heic、octet-stream、空字串、image/jpg、帶參數、非字串都收，mime 用檔頭決定', () => {
+  const cases: [Uint8Array, string][] = [[jpeg, 'image/jpeg'], [png, 'image/png'], [webp, 'image/webp']]
+  for (const [bytes, expected] of cases) {
+    for (const mime of ['image/heic', 'application/octet-stream', '', 'image/jpg', 'image/jpeg; charset=binary', 'image/gif', undefined, null, 1]) {
+      const r = validatePhotoPayload(mime, b64(bytes))
+      expect(r.ok).toBe(true)
+      if (r.ok) {
+        expect(r.mime).toBe(expected)
+        expect(r.bytes).toEqual(bytes)
+      }
+    }
   }
 })
 
-test('JPEG mime 配 PNG bytes 是 bad_magic', () => {
-  const r = validatePhotoPayload('image/jpeg', b64(png))
-  expect(r).toEqual({ ok: false, code: 'bad_magic', byteLength: png.length })
+test('contentType 說 PNG 但 bytes 是 JPEG：以檔頭為準', () => {
+  const r = validatePhotoPayload('image/png', b64(jpeg))
+  expect(r.ok).toBe(true)
+  if (r.ok) expect(r.mime).toBe('image/jpeg')
+})
+
+test('檔頭不是 JPEG/PNG/WebP：後端說是別的格式 → bad_mime，否則 bad_magic', () => {
+  const heicLike = new Uint8Array([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63])
+  expect(validatePhotoPayload('image/heic', b64(heicLike))).toEqual({ ok: false, code: 'bad_mime', byteLength: 12 })
+  expect(validatePhotoPayload('text/html', b64(heicLike))).toEqual({ ok: false, code: 'bad_mime', byteLength: 12 })
+  for (const mime of ['image/jpeg', 'application/octet-stream', '', undefined]) {
+    expect(validatePhotoPayload(mime, b64(heicLike))).toEqual({ ok: false, code: 'bad_magic', byteLength: 12 })
+  }
+})
+
+test('MIME 式換行的 base64 也能解', () => {
+  const big = new Uint8Array(400)
+  big.set(jpeg)
+  const wrapped = b64(big).replace(/(.{76})/g, '$1\r\n')
+  const r = validatePhotoPayload('image/jpeg', wrapped)
+  expect(r.ok).toBe(true)
+  if (r.ok) expect(r.bytes).toEqual(big)
+})
+
+test('sniffPhotoMime', () => {
+  expect(sniffPhotoMime(jpeg)).toBe('image/jpeg')
+  expect(sniffPhotoMime(png)).toBe('image/png')
+  expect(sniffPhotoMime(webp)).toBe('image/webp')
+  expect(sniffPhotoMime(new Uint8Array([1, 2, 3, 4]))).toBeNull()
+  expect(sniffPhotoMime(new Uint8Array())).toBeNull()
+})
+
+test('joinPhotoCodes 去重、保留順序、用「、」連接；沒有就 null', () => {
+  expect(joinPhotoCodes([])).toBeNull()
+  expect(joinPhotoCodes([undefined, undefined])).toBeNull()
+  expect(joinPhotoCodes(['net_timeout'])).toBe('net_timeout')
+  expect(joinPhotoCodes(['net_timeout', undefined, 'net_timeout', 'bad_magic'])).toBe('net_timeout、bad_magic')
+})
+
+test('safeCodePart 只留小寫英數底線', () => {
+  expect(safeCodePart('server_error')).toBe('server_error')
+  expect(safeCodePart('No-Folder!')).toBe('no_folder')
+  expect(safeCodePart('')).toBe('unknown')
+  expect(safeCodePart(undefined)).toBe('unknown')
+  expect(safeCodePart('<b>x</b>').includes('<')).toBe(false)
 })
 
 test('WebP 只有 RIFF 四個 bytes 是 bad_magic', () => {
-  const r = validatePhotoPayload('image/webp', b64(new Uint8Array([0x52, 0x49, 0x46, 0x46])))
+  const r = validatePhotoPayload('application/octet-stream', b64(new Uint8Array([0x52, 0x49, 0x46, 0x46])))
   expect(r.ok).toBe(false)
   if (!r.ok) expect(r.code).toBe('bad_magic')
 })
@@ -114,5 +165,20 @@ test('warnPhoto 只印 sicily-photo、代碼、長度', () => {
     expect(spy).toHaveBeenCalledWith('sicily-photo', 'bad_magic', 4)
   } finally {
     spy.mockRestore()
+  }
+})
+
+test('defaultPhotoDecoder：createImageBitmap 失敗時改用 <img>.decode() 再試', async () => {
+  const { defaultPhotoDecoder } = await import('@/data/photoBytes')
+  let imgTried = 0
+  vi.stubGlobal('createImageBitmap', async () => { throw new Error('InvalidStateError') })
+  vi.stubGlobal('Image', class { src = ''; async decode() { imgTried += 1 } })
+  try {
+    await expect(defaultPhotoDecoder(new Blob([jpeg], { type: 'image/jpeg' }))).resolves.toBeUndefined()
+    expect(imgTried).toBe(1)
+    vi.stubGlobal('Image', class { src = ''; async decode() { throw new Error('EncodingError') } })
+    await expect(defaultPhotoDecoder(new Blob([jpeg], { type: 'image/jpeg' }))).rejects.toThrow()
+  } finally {
+    vi.unstubAllGlobals()
   }
 })

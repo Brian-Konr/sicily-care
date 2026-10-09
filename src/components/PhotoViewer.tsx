@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogPortal, DialogTitle } from "@/components/ui/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
 import { WaitHint } from "@/components/WaitHint"
-import { PHOTO_WAIT, type PhotoThumbStatus } from "@/components/PhotoThumb"
+import { PhotoCodeLine, PHOTO_WAIT, type PhotoThumbStatus } from "@/components/PhotoThumb"
 import { clampPan, clampScale, viewerRelease } from "@/lib/viewerGesture"
 import { cn } from "@/lib/utils"
 
@@ -13,6 +13,8 @@ export interface ViewerPhoto {
   status: PhotoThumbStatus
   src?: string
   alt: string
+  /** 失敗時的診斷碼 */
+  code?: string
 }
 
 export function PhotoViewer({
@@ -156,6 +158,7 @@ export function PhotoViewer({
                   <div className="grid justify-items-center gap-3">
                     <p>這張照片沒載入。</p>
                     <Button variant="outline" onClick={() => onRetry(index)}>再試一次</Button>
+                    <PhotoCodeLine codes={cur.code} />
                   </div>
                 )}
                 {cur?.status === "offline" && <p>照片要連上網路才能看。</p>}

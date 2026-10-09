@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { EditEntrySheet, type EntryPatch } from "@/components/EditEntrySheet"
 import { NetworkBanner } from "@/components/NetworkBanner"
-import { PhotoThumb, PHOTO_WAIT, photoAria, photoCaption } from "@/components/PhotoThumb"
+import { PhotoCodeLine, PhotoThumb, PHOTO_WAIT, photoAria, photoCaption } from "@/components/PhotoThumb"
 import { PhotoViewer, type ViewerPhoto } from "@/components/PhotoViewer"
 import { BottomActionBar, ScreenLayout } from "@/components/ScreenLayout"
 import { StatusBadge } from "@/components/StatusBadge"
@@ -14,6 +14,7 @@ import { UpdateNeededNote } from "@/components/UpdateNeededNote"
 import { WaitHint } from "@/components/WaitHint"
 import type { PhotoCache } from "@/data/photoCache"
 import { useIssuePhotos } from "@/hooks/useIssuePhotos"
+import { joinPhotoCodes } from "@/data/photoBytes"
 import { dateKey, fmtEntryWhen } from "@/lib/format"
 
 const sevTone = (s: IssueEntry["severity"]): "urgent" | "watch" | "info" =>
@@ -52,12 +53,13 @@ export function IssueDetailScreen({
   })
   const n = photos.items.length
   const caption = photoCaption(photos.items.map((p) => p.status))
+  const failCodes = joinPhotoCodes(photos.items.map((p) => (p.status === "error" ? p.code : undefined)))
   const driveUrl = issue?.photo_urls.find((u) => u) ?? ""
   const v11 = version >= 2
   const showPhotos = issue && (n > 0 || ((issue.photo_ids.length > 0 || issue.photo_urls.some(Boolean)) && !v11))
 
   const viewerPhotos: ViewerPhoto[] = useMemo(() => photos.items.map((p, i) => ({
-    status: p.status, src: p.src, alt: photoAria(title, i, n, p.status),
+    status: p.status, src: p.src, code: p.status === "error" ? p.code : undefined, alt: photoAria(title, i, n, p.status),
   })), [photos.items, title, n])
 
   if (!issue) {
@@ -122,6 +124,7 @@ export function IssueDetailScreen({
                   {caption === "wait" ? <WaitHint busy hint5={PHOTO_WAIT.hint5} hint20={PHOTO_WAIT.hint20} />
                     : caption ? <p className="text-muted-foreground">{caption}</p> : null}
                 </div>
+                {caption !== "wait" && <PhotoCodeLine codes={failCodes} />}
               </>
             ) : (
               <UpdateNeededNote action="在 App 裡看照片" />

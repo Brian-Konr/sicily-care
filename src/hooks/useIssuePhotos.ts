@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import type { Api } from "@/api"
 import type { PhotoCache } from "@/data/photoCache"
 import { pendingLocalPhotos } from "@/data/photo"
-import { dataUrlByteLength, warnPhoto } from "@/data/photoBytes"
+import { dataUrlByteLength, warnPhoto, type PhotoFailCode } from "@/data/photoBytes"
 import { loadIssuePhoto, noteImgError } from "@/data/photoLoad"
 import { supportsV11 } from "@/data/codec"
 import type { PhotoThumbStatus } from "@/components/PhotoThumb"
@@ -14,6 +14,8 @@ export interface IssuePhotoItem {
   /** Remote ready: blob: URL. Local: data URL. Absent otherwise. */
   src?: string
   byteLength?: number
+  /** 只在 status === "error" 時有值：診斷碼（畫面「代碼：…」） */
+  code?: PhotoFailCode
 }
 
 export function useIssuePhotos(opts: {
@@ -55,9 +57,16 @@ export function useIssuePhotos(opts: {
     if (inflight.current.has(fileId)) return
     inflight.current.add(fileId)
     revoke(fileId)
-    setOne(fileId, { status: "loading", src: undefined })
+    setOne(fileId, { status: "loading", src: undefined, code: undefined })
     try {
-      const result = await loadIssuePhoto({ fileId, version, api, cache, skipCache })
+      let result: Awaited<ReturnType<typeof loadIssuePhoto>>
+      try {
+        result = await loadIssuePhoto({ fileId, version, api, cache, skipCache })
+      } catch {
+        // 不該發生；發生了也不要永遠停在「載入中」
+        warnPhoto("unexpected", 0)
+        result = { status: "error", code: "unexpected", byteLength: 0 }
+      }
       if (ticket !== gen.current) return
       if (result.status === "ready") {
         try {
@@ -65,12 +74,12 @@ export function useIssuePhotos(opts: {
           setOne(fileId, { status: "ready", src, byteLength: result.byteLength })
         } catch {
           warnPhoto("decode_failed", result.blob.size)
-          setOne(fileId, { status: "error", src: undefined, byteLength: result.blob.size })
+          setOne(fileId, { status: "error", src: undefined, byteLength: result.blob.size, code: "decode_failed" })
         }
         return
       }
       if (result.status === "error") {
-        setOne(fileId, { status: "error", src: undefined, byteLength: result.byteLength })
+        setOne(fileId, { status: "error", src: undefined, byteLength: result.byteLength, code: result.code })
         return
       }
       if (result.status === "offline" || result.status === "forbidden") {
@@ -127,7 +136,7 @@ export function useIssuePhotos(opts: {
       const p = local[index]
       if (p) {
         const src = p.dataUrl
-        setOne(key, { status: "local", src, byteLength: dataUrlByteLength(src) })
+        setOne(key, { status: "local", src, byteLength: dataUrlByteLength(src), code: undefined })
       }
       return
     }
@@ -141,7 +150,7 @@ export function useIssuePhotos(opts: {
     if (!item || (item.status !== "ready" && item.status !== "local")) return
     broken.current.add(key)
     revoke(key)
-    setOne(key, { status: "error", src: undefined, byteLength: item.byteLength ?? 0 })
+    setOne(key, { status: "error", src: undefined, byteLength: item.byteLength ?? 0, code: "img_error" })
     void noteImgError({ fileId: item.fileId, byteLength: item.byteLength ?? 0, cache })
   }
 

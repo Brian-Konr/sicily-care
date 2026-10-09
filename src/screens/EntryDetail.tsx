@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { DueStatus } from "@/components/DueStatus"
 import { EditEntrySheet, type EntryPatch } from "@/components/EditEntrySheet"
 import { NetworkBanner } from "@/components/NetworkBanner"
-import { PhotoThumb, PHOTO_WAIT, photoAria, photoCaption } from "@/components/PhotoThumb"
+import { PhotoCodeLine, PhotoThumb, PHOTO_WAIT, photoAria, photoCaption } from "@/components/PhotoThumb"
 import { PhotoViewer, type ViewerPhoto } from "@/components/PhotoViewer"
 import { ScreenLayout } from "@/components/ScreenLayout"
 import { StatusBadge } from "@/components/StatusBadge"
@@ -16,6 +16,7 @@ import { UpdateNeededNote } from "@/components/UpdateNeededNote"
 import { WaitHint } from "@/components/WaitHint"
 import type { PhotoCache } from "@/data/photoCache"
 import { useIssuePhotos } from "@/hooks/useIssuePhotos"
+import { joinPhotoCodes } from "@/data/photoBytes"
 import { describe, detailRows } from "@/lib/describe"
 import { dateKey } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -55,11 +56,12 @@ export function EntryDetailScreen({
   const d = entry ? describe(entry) : null
   const n = photos.items.length
   const caption = photoCaption(photos.items.map((p) => p.status))
+  const failCodes = joinPhotoCodes(photos.items.map((p) => (p.status === "error" ? p.code : undefined)))
   const v11 = version >= 2
   const viewerTitle = d?.title ?? ""
 
   const viewerPhotos: ViewerPhoto[] = useMemo(() => photos.items.map((p, i) => ({
-    status: p.status, src: p.src, alt: photoAria(viewerTitle, i, n, p.status),
+    status: p.status, src: p.src, code: p.status === "error" ? p.code : undefined, alt: photoAria(viewerTitle, i, n, p.status),
   })), [photos.items, viewerTitle, n])
 
   return (
@@ -128,6 +130,7 @@ export function EntryDetailScreen({
                       {caption === "wait" ? <WaitHint busy hint5={PHOTO_WAIT.hint5} hint20={PHOTO_WAIT.hint20} />
                         : caption ? <p className="text-muted-foreground">{caption}</p> : null}
                     </div>
+                    {caption !== "wait" && <PhotoCodeLine codes={failCodes} />}
                   </>
                 ) : (
                   <UpdateNeededNote action="在 App 裡看照片" />

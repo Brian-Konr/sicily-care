@@ -6,16 +6,33 @@ import {
   type PhotoFailCode,
   decodePhotoBlob,
   defaultPhotoDecoder,
+  safeCodePart,
   validatePhotoPayload,
   warnPhoto,
 } from '@/data/photoBytes'
 
 export type LoadPhotoResult =
   | { status: 'ready'; blob: Blob; byteLength: number }
-  | { status: 'error'; byteLength: number; code?: PhotoFailCode }
+  | { status: 'error'; byteLength: number; code: PhotoFailCode }
   | { status: 'offline' }
   | { status: 'forbidden' }
   | { status: 'unavailable' }
+
+/** getPhoto 丟出的錯誤 → 診斷碼（forbidden／離線另外處理，不會走到這裡） */
+export function photoFetchFailCode(err: unknown): PhotoFailCode {
+  if (err instanceof NetworkError) {
+    if (err.kind === 'timeout') return 'net_timeout'
+    const http = /^http-(\d{3})$/.exec(err.kind)
+    if (http) return `http_${Number(http[1])}`
+    return 'net_fetch'
+  }
+  if (err instanceof ServerError) {
+    if (err.code === 'bad_response') return 'bad_response'
+    const part = safeCodePart(err.code)
+    return part.startsWith('server_') ? (part as PhotoFailCode) : `server_${part}`
+  }
+  return 'unexpected'
+}
 
 export async function loadIssuePhoto(opts: {
   fileId: string
@@ -65,10 +82,12 @@ export async function loadIssuePhoto(opts: {
   } catch (err) {
     if (err instanceof ServerError && err.code === 'forbidden') return { status: 'forbidden' }
     if (err instanceof NetworkError && !online) return { status: 'offline' }
-    return { status: 'error', byteLength: 0 }
+    const code = photoFetchFailCode(err)
+    warn(code, 0)
+    return { status: 'error', code, byteLength: 0 }
   }
 
-  const checked = validatePhotoPayload(response.mime, response.data)
+  const checked = validatePhotoPayload(response?.mime, response?.data)
   if (!checked.ok) {
     warn(checked.code, checked.byteLength)
     return { status: 'error', code: checked.code, byteLength: checked.byteLength }

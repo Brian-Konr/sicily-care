@@ -77,6 +77,12 @@ export function photoAria(title: string, i: number, n: number, status: PhotoThum
   return base
 }
 
+/** 診斷碼行（DESIGN §7.4 v0.6.1）：只在有失敗照片時顯示；不加 aria-live（說明行已經會報讀） */
+export function PhotoCodeLine({ codes }: { codes: string | null | undefined }) {
+  if (!codes) return null
+  return <p className="font-num text-muted-foreground select-text" data-photo-code="">代碼：{codes}</p>
+}
+
 export const PHOTO_WAIT = {
   hint5: "照片要從 Google 取回，第一次比較慢，最多約半分鐘。",
   hint20: "還在讀取照片，請稍等，不用離開這頁。",
